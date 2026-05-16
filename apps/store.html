@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Infinity Store</title>
+<link rel="stylesheet" href="global.css">
+
+<style>
+    body{user-select: none;}
+.app-card {
+    border-radius: 15px;
+    padding: 10px;
+    margin: 5px;
+    cursor: pointer;
+    border: solid 1px #aaa;
+}
+
+p, h2 {
+    padding-left: 10px;
+}
+
+#apps-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+/* Carousel */
+.slideshow-container {
+  max-width: 1000px;
+  position: relative;
+  margin: auto;
+  min-height: 100px;
+  box-sizing:border-box;
+}
+
+.mySlides {
+  display: none;
+    transition: transform 0.4s ease;
+    height: 300px;
+    z-index: 0;
+    
+    align-items: center;
+  justify-content: center;
+  
+  
+}
+
+.mySlides img {
+  width: 100%;
+  height: 300px;
+  object-fit: contain;
+  border: none;
+  
+
+background: #000;
+
+}
+
+.prev, .next {
+  cursor: pointer;
+  position: absolute;
+  top: 50%;
+  
+  padding: 15px;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  font-weight: bold;
+  font-size: 15px;
+
+
+}
+
+.next {
+  right: 0;
+}
+.mySlides .text{
+    display:none;
+}
+.mySlides:hover .text{
+    display:block;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  position: absolute;
+  font-size: 15px;
+  width: 100%;
+  text-align: center;
+}
+
+
+/* Most strange thingy ever made in the whole Infinity Systems ecosystem */
+#err{
+    display: none;
+    position: absolute;
+    
+    top:0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #fff;
+    z-index: 10;
+    padding-top: 10px;
+    text-align: center;
+}
+
+/* Dialog */
+#app-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+.dialog-content {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    width: 320px;
+}
+
+/* Робимо body контейнером на всю висоту вікна */
+body {
+    display: flex;
+    flex-direction: column;
+    height: 100vh; /* Важливо для фіксації */
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Забороняємо загальний скрол */
+}
+
+.toolbar {
+    flex-shrink: 0; /* Не дозволяємо тулбару стискатися */
+    
+}
+
+/* Контентна частина, яка буде скролитися */
+main {
+    flex-grow: 1;
+    overflow-y: auto; /* Дозволяємо скрол лише тут */
+    
+}
+
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <select id="mode-select">
+        <option value="all">All</option>
+        <option value="html">HTML</option>
+        <option value="js">JS</option>
+        <option value="node">NodeJS</option>
+        <option value="theme">Theme</option>
+    </select>
+
+    <input type="search" id="search-input" placeholder="Search apps..." style="flex-grow:1;">
+    <button id="search-btn">Search</button>
+</div>
+
+<main>
+
+<div id="err">
+    <h2>Repository unavailable</h2>
+
+The service is temporarily paused due to monthly usage limits.
+It will resume when the next cycle begins.
+
+<br><br>
+
+<b>What can you do now?</b>
+<ul>
+    <li>Wait for the next cycle</li>
+    <li>Connect to a custom repository</li>
+</ul>
+
+<br>
+
+<b>Tip:</b><br>
+Avoid frequently downloading large applications to reduce usage.
+    <br>
+    <button onclick="customRepo()">Connect to custom repository</button>
+    
+    <script>
+        function customRepo() {
+            document.getElementById("err").innerHTML = `
+        <h2>Connect to custom repository</h2>
+        <input id="meta" placeholder="Meta URL"><br><br>
+        <button onclick="connect()">Connect</button>
+        <p id="status"></p>
+    `;
+        }
+        function getRepoUrl(metaUrl) {
+    const url = new URL(metaUrl);
+    
+    // прибираємо останній сегмент (apps.json або meta.json)
+    const parts = url.pathname.split("/");
+    parts.pop(); // remove file name
+
+    const basePath = parts.join("/") + "/";
+
+    return url.origin + basePath;
+}
+
+
+        
+        async function connect() {
+            
+            const metaInput = document.getElementById("meta");
+            const status = document.getElementById("status");
+            
+            
+            const meta = metaInput.value.trim();
+            const repo = getRepoUrl(meta);
+            parent.console.log(meta + " < "+repo)
+            if (!repo || !meta) {
+                status.innerText = "Please fill both fields.";
+                return;
+            }
+            
+            try {
+                
+                
+                // переключення
+                BASE_URL = repo;
+                META_URL = meta;
+                
+                status.innerText = "Connected successfully!";
+                
+                // перезапуск Store
+                const note = await start();
+                status.innerText = note;
+                
+            } catch (e) {
+                status.innerText = "Failed to connect. Check URLs.";
+                parent.console.error(e.message)
+            }
+        }
+    </script>
+</div>
+<section>
+<h2>Popular</h2>
+
+<div class="slideshow-container">
+    <div id="slides-wrapper"></div>
+
+    <a class="prev" onclick="plusSlides(-1)">❮</a>
+    <a class="next" onclick="plusSlides(1)">❯</a>
+</div>
+
+</section>
+
+<section>
+<h2>List</h2>
+<div id="apps-list"></div>
+</section>
+
+</main>
+
+<div id="app-dialog">
+    <div class="dialog-content" id="dialog-content"></div>
+</div>
+
+<script>
+let apps;
+
+const err = document.getElementById("err");
+
+let BASE_URL = "https://cosmic-dragon-a1ab65.netlify.app/";
+let META_URL = BASE_URL + "meta.json";
+
+let localApps = parent.getApps();
+// If "name" property of app is same, then we need to show update button, not install.
+// If "hash" property of app is same as app size form store, then user has older version and needs to update.
+
+
+const start = async () => {
+    let ret;
+    if (!navigator.onLine){
+        
+        err.innerHTML = `
+            <h2>Repository unavailable</h2>
+
+Your device isn't connected to Internet.
+
+<br><br>
+
+<b>What can you do now?</b>
+<ul>
+    <li>Check your Internet connection</li>
+    <li>Browse and open local apps</li>
+</ul><button onclick="start()">Retry</button>
+
+<br>
+        `
+err.style.display = "block";
+    }
+    try {
+        const response = await fetch(META_URL);
+        
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+        
+        apps = await response.json();
+        
+        if (!Array.isArray(apps)) {
+            ret = "Invalid meta format";
+parent.console.error(ret)
+            //throw new Error("Invalid meta format");
+            
+        }
+        //localStorage.setItem("store_cache", JSON.stringify(apps))
+        
+        update();
+        
+        ret = "Found: " + apps.length;
+        parent?.console.log?.("Found: " + apps.length);
+        err.style.display = "none";
+        
+    } catch (e) {
+        console.error("Store load failed:", e);
+        ret = "Store load failed:"+e;
+        
+        if (err) {
+            err.style.display = "block";
+            
+        }else{
+            
+        }
+    }
+    return ret;
+}
+start()
+
+const appsContainer = document.getElementById("apps-list");
+const slidesWrapper = document.getElementById("slides-wrapper");
+const dialog = document.getElementById("app-dialog");
+const dialogContent = document.getElementById("dialog-content");
+const currentOS = parent.getDevProps().os.version;
+
+function formatVersion(rawDate) {
+    // Input: "24042026"
+    const day = rawDate.slice(0, 2);
+    const month = rawDate.slice(2, 4);
+    const year = rawDate.slice(4, 8);
+    
+    return `${year}${month}${day}`; // Output: "20260424"
+}
+function isCompatible(app) {
+    return formatVersion(currentOS) >= formatVersion(app.minOS);
+}
+
+
+
+/* Cards */
+function createCard(app) {
+    const card = document.createElement("div");
+    card.className = "app-card";
+
+    card.innerHTML = `
+        <h3 style="white-space: nowrap;">${app.name || ""}</h3>
+        <small>${app.developer || ""}</small>
+        <br>
+        <button class="inst">Install</button>
+    `;
+    
+    
+	if (!isCompatible(app)){
+	card.querySelector("button").disabled = true;
+	}
+    card.onclick = () => openDialog(app);
+
+card.querySelector("button").onclick = (e) => {
+    e.stopPropagation();
+    install(app.name);
+};
+
+    
+
+    return card;
+}
+
+function renderApps(list) {
+    appsContainer.innerHTML = "";
+    try{
+    list.forEach(app => appsContainer.appendChild(createCard(app)));}catch{}
+}
+
+/* Carousel */
+function renderCarousel(list) {
+    slidesWrapper.innerHTML = "";
+
+    list.forEach(app => {
+        const slide = document.createElement("div");
+        slide.className = "mySlides";
+
+        slide.innerHTML = `
+            <img src="${BASE_URL+app.banner || ""}">
+            <div class="text">${app.name || ""}</div>
+        `;
+
+        slide.onclick = () => openDialog(app);
+
+        slidesWrapper.appendChild(slide);
+    });
+
+    slideIndex = 1;
+    showSlides(slideIndex);
+}
+
+/* Dialog */
+function openDialog(app) {
+    dialog.style.display = "flex";
+
+    dialogContent.innerHTML = `
+        <h2 style="user-select: text;">${app.name || ""}</h2>
+        <small>${app.developer || ""}</small>
+        <p style="user-select: text;">${app.desc || ""}</p>
+<button class="inst">Install</button>
+        <hr>
+        <p><b>Tester:</b> ${app.tester || ""}</p>
+        <p><b>Minimal OS version:</b> ${app.minOS || "00000000"}</p>
+    `;
+    if (app.deps != null){
+    dialogContent.innerHTML += `
+    <p><b>Dependencies:</b> ${app.deps.join(", ")}</p>
+    `;
+    }
+    	if (!isCompatible(app)){
+	dialogContent.querySelector("button").disabled = true;
+	}
+
+dialog.querySelector("button").onclick = (e) => {
+    e.stopPropagation();
+    install(app.name);
+};
+}
+
+dialog.onclick = (e) => {
+    if (e.target === dialog) dialog.style.display = "none";
+};
+
+/* Filters */
+const modeSelect = document.getElementById("mode-select");
+const searchInput = document.getElementById("search-input");
+
+function filterApps() {
+    const mode = modeSelect.value;
+    const query = searchInput.value.toLowerCase();
+    let a;
+try{
+     a =  apps.filter(app =>
+        (mode === "all" || app.type === mode) &&
+        app.name.toLowerCase().includes(query)
+    );
+}catch{
+    modeSelect.disabled = 1;
+    a =  apps;
+}
+return a;
+}
+
+
+
+async function install(name) {
+    const app = apps.find(a => a.name === name);
+    if (!app) {
+        parent.console.error("App not found in registry: " + name);
+        return 0;
+    }
+
+    const url = BASE_URL + app.entry;
+    parent.console.log("Downloading from: " + url);
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+
+        const blob = await res.blob();
+        if (!blob) throw new Error("No BLOB provided.");
+
+        // Створюємо файл для розархівування
+        const file = new File([blob], `tmp_${Date.now()}.zip`, {
+            type: blob.type || "application/zip"
+        });
+
+        // Розпаковуємо у корінь або специфічну папку
+        await parent.unzipFile(file, "");
+
+        // Обробка залежностей (виправлено порівняння)
+        if (app.deps && app.deps.length > 0) {
+            await parent.npmUpdate();
+            for (const pkg of app.deps) {
+                await parent.npmInstall(pkg); // Прибрано подвійний await
+            }
+        }
+
+        // Логіка для JS-скриптів (автозавантаження)
+        if (app.type === "js") {
+            // Шукаємо файл у внутрішній ФС
+            const fileName = app.entry.split("/").pop().split(".")[0].toLowerCase() + '.js';
+            const fileExists = parent.getFs().find(f => f.name == fileName);
+            parent.console.log(fileName+ ":" + fileExists)
+            parent.alert(fileName + ""+ fileExists)
+            if (fileExists) {
+                let autoload = [];
+                const autoloadString = localStorage.getItem('infinity_os_autoload');
+                
+                if (autoloadString) {
+                    try {
+                        autoload = JSON.parse(autoloadString);
+                    } catch (e) {
+                        console.error("Autoload parse error:", e);
+                        autoload = [];
+                    }
+                }
+
+                // Перевіряємо, чи вже є в автозавантаженні
+                if (!autoload.includes(fileName)) {
+                    autoload.push(fileName);
+                    localStorage.setItem('infinity_os_autoload', JSON.stringify(autoload));
+                    
+            
+                }
+            }
+        }
+
+        // Реєстрація в системі
+        parent.addApp({
+            name: app.name,
+            icon: app.icon, // Краще додати іконку відразу
+            url: null // Якщо додаток запускається через ядро
+        });
+
+        parent.alert("Successfully installed: " + app.name);
+        return 1;
+
+    } catch (e) {
+        parent.console.error(`Installation failed for ${name}: ${e.message}`);
+        return 0;
+    }
+}
+
+
+function update() {
+    const filtered = filterApps();
+    
+    renderApps(filtered);
+    try{
+    renderCarousel(filtered.filter(a => a.banner != ""));
+    }catch{}
+}
+
+modeSelect.onchange = update;
+searchInput.oninput = update;
+
+/* Slideshow */
+let slideIndex = 1;
+
+function plusSlides(n) {
+    showSlides(slideIndex += n);
+}
+
+function showSlides(n) {
+    const slides = document.getElementsByClassName("mySlides");
+
+    if (!slides.length) return;
+    
+
+    if (n > slides.length) slideIndex = 1;
+    if (n < 1) slideIndex = slides.length;
+
+    for (let s of slides) {
+        s.style.display = "none";
+        s.style.transform = "translateX(-100%)";
+    }
+
+    slides[slideIndex - 1].style.display = "block";
+    slides[slideIndex - 1].style.transform = "translateX(0)";
+}
+
+/* Auto slide */
+setInterval(() => plusSlides(1), 4000);
+
+window.onError = (e) => {
+parent.console.error(e.message)
+}
+
+</script>
+
+</body>
+</html>

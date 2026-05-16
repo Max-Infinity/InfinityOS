@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- main globe -->
+  <circle cx="32" cy="32" r="20"
+          fill="#4da3ff" stroke="#2f7fe0" stroke-width="2"/>
+
+  <!-- longitude -->
+  <ellipse cx="32" cy="32" rx="8" ry="20"
+           fill="none" stroke="#2f7fe0" stroke-width="2"/>
+
+  <!-- latitude -->
+  <path d="M12 32 H52" stroke="#2f7fe0" stroke-width="2"/>
+  <path d="M13 24 H50" stroke="#2f7fe0" stroke-width="2"/>
+  <path d="M13 40 H50" stroke="#2f7fe0" stroke-width="2"/>
+
+
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- base -->
+  <rect x="6" y="4" width="52" height="56" rx="8"
+        fill="#fff6d6"/>
+
+  <!-- zipper -->
+  <rect x="30" y="4" width="4" height="56" rx="2" fill="#8e8e93"/>
+    
+<rect x="6" y="4" width="52" height="56" rx="8"
+      fill="none"
+      stroke="#c7c7cc" stroke-width="2"/>
+  
+  <rect x="28" y="22" width="8" height="4" rx="1" fill="#8e8e93"/>
+  <rect x="28" y="30" width="8" height="4" rx="1" fill="#8e8e93"/>
+  <rect x="28" y="38" width="8" height="4" rx="1" fill="#8e8e93"/>
+</svg>

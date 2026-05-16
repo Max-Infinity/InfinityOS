@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- back -->
+  <path d="M6 18
+           Q6 12 12 12
+           H26 L30 16 H52
+           Q58 16 58 22
+           V48
+           Q58 54 52 54
+           H12
+           Q6 54 6 48 Z"
+        fill="#4da3ff" stroke="#2f7fe0" stroke-width="2"/>
+
+  <!-- front -->
+  <path d="M6 24 H58 V48
+           Q58 54 52 54
+           H12
+           Q6 54 6 48 Z"
+        fill="#4da3ff" stroke="#2f7fe0" stroke-width="2"/>
+</svg>

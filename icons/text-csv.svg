@@ -1,0 +1,19 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Основа строго за вашими розмірами -->
+  <rect x="6" y="4" width="52" height="56" rx="8"
+        fill="#E8F5E9"
+        stroke="#C8CED4"
+        stroke-width="2"/>
+
+  <!-- Внутрішня сітка адаптована під 64x64 -->
+  <g opacity="0.7">
+    <rect x="16" y="18" width="14" height="6" rx="1" fill="#2E7D32"/>
+    <rect x="34" y="18" width="14" height="6" rx="1" fill="#2E7D32"/>
+
+    <rect x="16" y="28" width="14" height="6" rx="1" fill="#2E7D32"/>
+    <rect x="34" y="28" width="14" height="6" rx="1" fill="#2E7D32"/>
+
+    <rect x="16" y="38" width="14" height="6" rx="1" fill="#2E7D32"/>
+    <rect x="34" y="38" width="14" height="6" rx="1" fill="#2E7D32"/>
+  </g>
+</svg>

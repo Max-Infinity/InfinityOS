@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+ <rect x="6" y="4" width="52" height="56" rx="8" fill="#ffffff" stroke="#c7c7cc" stroke-width="2" />
+ <line x1="16" y1="20" x2="48" y2="20" stroke="#555" stroke-width="2" />
+ <line x1="16" y1="45" x2="48" y2="45" stroke="#555" stroke-width="2" />
+ <line x1="16" y1="50" x2="40" y2="50" stroke="#555" stroke-width="2" />
+
+<text x="16" y="40" font-size="20" font-family="SFMono-Regular, monospace" fill="#4a4a4a">Aa</text>
+</svg>

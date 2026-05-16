@@ -1,0 +1,245 @@
+
+<style>
+  * { user-select: none; font-family: sans-serif; box-sizing: border-box; }
+  
+  /* Контейнер для двох колонок */
+  .charts-container {
+    display: flex;
+    gap: 15px;
+    width: 100%;
+    margin-bottom: 45px;
+  }
+  
+.chart-box {
+  flex: 1;
+  min-width: 0;
+  height: 140px; /* Фіксуємо висоту секції */
+}
+canvas {
+  width: 100% !important;
+  height: 100% !important; /* Канвас заповнить коробку */
+}
+
+  button { 
+    padding: 2px 8px; border: 1px solid #aaa; background-color: #ddd; 
+    cursor: pointer; font-weight: bold; 
+  }
+  
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; color: black; }
+  th { text-align: left; background: #eee; padding: 5px; font-size: 0.8em; border-bottom: 2px solid #ccc; }
+  td { padding: 5px; border-bottom: 1px solid #eee; font-size: 0.85em; }
+  
+  h2 { font-size: 1.1em; margin: 10px 0 5px 0; }
+  
+  p, h2 {
+    padding-left: 10px;
+}
+</style>
+
+<link rel="stylesheet" href="global.css">
+
+<div class="charts-container">
+  <div class="chart-box">
+    <h2 id='cpu_title'>CPU:</h2>
+    <canvas id="line-chart"></canvas>
+  </div>
+  
+  <div class="chart-box">
+    <h2 id='ram_title'>RAM:</h2>
+    <canvas id="ram-chart"></canvas>
+  </div>
+</div>
+
+<h2 id='processes_title'>Processes:</h2>
+<table>
+  <tbody id="process-table-body"></tbody>
+</table>
+
+
+<script src="../dist/chart.umd.js"></script>
+
+<script>
+window.Worker = parent.Worker;
+const tableBody = document.getElementById('process-table-body');
+// --- ГРАФІК ОЗП (RAM) ---
+const ramData = [];
+let heapLimit = 0;
+const mem = navigator.deviceMemory * 1024;
+
+const ramChart = new Chart(document.getElementById("ram-chart"), {
+  type: "line",
+  data: {
+    labels: Array(50).fill(""),
+    datasets: [{ 
+      data: ramData, 
+      borderColor: "#d4af37", // Золотистий колір для RAM
+      fill: true, 
+      backgroundColor: "rgba(212, 175, 55, 0.1)",
+      tension: 0.5, // Зробимо його плавнішим
+      pointRadius: 0 
+    },
+      {
+  
+  data: Array(50).fill(heapLimit), // Лінія ліміту
+  borderColor: "#ff4d4d",
+  borderDash: [5, 5], // Робимо лінію пунктирною
+  borderWidth: 2,
+  fill: false,
+  pointRadius: 0,
+  order: 1 // Щоб лінія була поверх графіка
+}
+    ]
+  },
+  options: {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false, // Вимкнення анімації зекономить ресурси і прибере "тряску"
+  layout: {
+    padding: 0
+  },
+  scales: {
+    x: {
+      display: false, // Ховаємо порожню нижню вісь
+    },
+    y: {
+      beginAtZero: true,
+      // Для RAM можна додати фіксований максимум, якщо знаєте ліміт, 
+      // або залишити авто, але з відступом:
+      max: mem,
+  
+      grace: '5%' 
+    }
+  },
+  plugins: {
+    legend: { display: false }
+  }
+}
+
+});
+
+function updateRAM() {
+  let memoryUsage = 0;
+  
+  if (performance.memory) {
+    
+    // Переводимо з байтів у Мегабайти
+    memoryUsage = (performance.memory.usedJSHeapSize / 1048576).toFixed(2);
+    
+    heapLimit = window.performance && performance.memory 
+    ? Number((performance.memory.jsHeapSizeLimit / 1048576).toFixed(2)) 
+    : null;
+ramChart.data.datasets[1].data = Array(50).fill(heapLimit);
+  } else {
+    // Якщо API не підтримується, можна імітувати навантаження від кількості процесів
+    const processCount = document.getElementsByClassName("winbox").length;
+    memoryUsage = (10 + processCount * 2.5).toFixed(2); 
+  }
+//console.log(memoryUsage+"/"+heapLimit)
+  ramData.push(memoryUsage);
+  ramChart.data.datasets[0].data = ramData.slice(-50);
+  ramChart.update('none'); // 'none' для кращої продуктивності
+}
+
+// Оновлюємо RAM кожну секунду
+setInterval(updateRAM, 1000);
+
+// Локалізація
+document.getElementById('ram_title').innerText = window.parent._("ram") + " (MB):";
+
+
+
+// --- ГРАФІК (Ваш оригінальний код без змін) ---
+const blob = new Blob([`let time = performance.now(); let iterations = 0; while(true){ iterations++; let now = performance.now(); if(now - time > 100){ postMessage(iterations); time = performance.now(); iterations = 0; } }`], { type: "text/javascript" });
+const processWorker = new Worker(window.URL.createObjectURL(blob));
+const performanceData = [];
+const chart = new Chart(document.getElementById("line-chart"), {
+  type: "line",
+  data: {
+    labels: Array(50).fill(""),
+    datasets: [{ data: performanceData, borderColor: "#0f796b", fill: true, tension: 0.5, pointRadius: 0 }]
+  },
+  options: {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false, // Вимкнення анімації зекономить ресурси і прибере "тряску"
+  layout: {
+    padding: 0
+  },
+  scales: {
+    x: {
+      display: false, // Ховаємо порожню нижню вісь
+    },
+    y: {
+      beginAtZero: true,
+    
+    }
+  },
+  plugins: {
+    legend: { display: false }
+  }
+}
+
+});
+processWorker.onmessage = (e) => {
+  performanceData.push(+e.data);
+  chart.data.datasets[0].data = performanceData.slice(-50);
+  chart.update();
+};
+
+function addRow(id, title, type, isHidden = false) {
+    const tr = document.createElement('tr');
+    
+    tr.innerHTML = `
+    <td onclick="parent.fore('${id}', '${type}');" style="word-break: break-all; cursor: pointer; padding: 10px 5px; width: 95%;">
+        <span style="color: ${isHidden ? "#777" : "#000"};">
+            ${title}
+        </span>
+        <br><small style="color: #bbb; font-size: 0.75em;">${id}</small>
+    </td>
+    <td style="text-align: center; vertical-align: middle;">
+        <button onclick="parent.kill('${id}', '${type}'); updateProcessList();">
+            ×
+        </button>
+    </td>
+`;
+    tableBody.appendChild(tr);
+}
+function updateProcessList() {
+    tableBody.innerHTML = '';
+
+    // 1. ВІКОННІ ПРОЦЕСИ (WinBox)
+    
+    try {
+        const winboxCollection = window.parent.document.getElementsByClassName("winbox");
+        if (winboxCollection.length === 0) {
+            tableBody.innerHTML += '';
+        }
+        Array.from(winboxCollection).forEach(el => {
+            const title = el.querySelector('.wb-title')?.innerText || parent._("unknown");
+            
+const hidden = el.classList.contains("hide");
+
+            addRow(el.id, title, 'winbox', hidden);
+        });
+    } catch (e) { console.error(e); }
+
+try {
+        const workers = window.parent.systemWorkers || [];
+        workers.forEach(w => {
+            // Використовуємо вашу функцію addRow, додаючи помітку [Worker]
+            addRow(w.id, `${w.url.split('/').pop()}`, 'worker', false);
+        });
+    } catch (e) { console.error(e); }
+}
+
+// Інтервали оновлення
+setInterval(updateProcessList, 500);
+updateProcessList();
+
+// Локалізація
+document.getElementById('cpu_title').innerText = window.parent._("cpu") + ":";
+document.getElementById('processes_title').innerText = window.parent._("processes") + ":";
+
+window.addEventListener('beforeunload', () => processWorker.terminate());
+
+</script>

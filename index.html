@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="apps/global.css">
+<meta charset="UTF-8">
+<body id="body" oncontextmenu=" event.preventDefault();">
+  
+<script src="dist/winbox.bundle.min.js"></script>
+<script src="dist/jszip.min.js"></script>
+<script src="dist/marked.umd.js"></script>
+<script src="dist/turndown.min.js"></script>
+<script src="dist/mammoth.browser.min.js"></script>
+<script src="dist/html-docx.min.js"></script>
+
+<div id="splash">
+<img style='width:min(10vw, 64px);' src="branding/logo.png">
+<style>
+html,body {
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+}
+</style>
+
+
+<progress max="100" value="0" min="0" id='loadprg'></progress>
+<p id="notify"></p>
+</div>
+  <div id="desktopApps"></div>
+
+
+<div class="menu glass-theme glass-theme" id="deskM">
+  <li onclick="safeShutdown({ restart: true });"><p>restart</p><span>⌘+R</span></li>
+    <li onclick="safeShutdown({ restart: false });"><p>shutdown</p><span>⌘+W</span></li>
+</div>
+
+<div class="menu glass-theme glass-theme" id="folderM">
+  <li id="create_item_btn"><p>+</p></li>
+<li id="getinfo1_btn"><p>get_info</p></li>
+</div>
+
+<div class="menu glass-theme" id="itemM">
+  <li id="delete_item_btn"><p>delete_btn</p><span>Del</span></li>
+  <li id="copy_name"><p>copy_name</p><span></span></li>
+</div>
+
+<div class="menu glass-theme" id="fileM">
+  <li id="open_btn"><b>open</b><span></span></li>
+  <li id="open_as_text_btn"><p>open_as_text_btn</p><span></span></li>
+  <li id="rename_btn"><p>rename_btn</p><span></span></li>
+  <li id="delete_file_btn"><p>delete_btn</p><span>Del</span></li>
+  <li id="print_btn"><p>print_btn</p><span></span></li>
+  <li id="set_bg_btn"><p>set_bg_btn</p><span></span></li>
+  <li id="toggle_autoload"><input type="checkbox" id="isAutoload"></input><label for="isAutoload">autoload</label><span></span></li>
+  <li id="toggle_startup"><input type="checkbox" id="isStartup"></input><label for="isStartup">startup</label><span></span></li>
+  <li id="unzip_btn"><p>extract_btn</p></li>
+  <li id="zip_btn"><p>pack_btn</p></li>
+  <li id="mount_btn"><p>mount_btn</p></li>
+  <li id="unmount_btn"><p>unmount_btn</p></li>
+  <li id="format_btn"><p>format_btn</p></li>
+  <li id="default_btn"><p>set_default</p></li>
+  <hr style="margin: 3px 0; border-color: #ffffff33;">
+  <li id="getinfo_btn"><p>get_info</p></li>
+</div>
+
+<div class="menu glass-theme" id="textM">
+  <li id="t_undo" onclick="document.execCommand('undo'); this.closest('.menu').style.display='none';"><p data-i18n="undo_btn">undo_btn</p><span>⌘+Z</span></li>
+  <li id="t_redo" onclick="document.execCommand('redo'); this.closest('.menu').style.display='none';"><p data-i18n="redo_btn">redo_btn</p><span>⌘+⇧+Z</span></li>
+  <hr id="t_" style="margin: 3px 0; border-color: #ffffff33;">
+  <li id="t_cut" onclick="document.execCommand('cut'); this.closest('.menu').style.display='none';"><p data-i18n="cut_btn">cut_btn</p><span>⌘+X</span></li>
+  <li id="t_copy" onclick="document.execCommand('copy'); this.closest('.menu').style.display='none';"><p data-i18n="copy_btn">copy_btn</p><span>⌘+C</span></li>
+  <li id="t_paste" onclick="const text = await navigator.clipboard.readText();doc.execCommand('insertText', false, text); this.closest('.menu').style.display='none';"><p data-i18n="paste_btn">paste_btn</p><span>⌘+V</span></li>
+  <li id="t_del" onclick="document.execCommand('delete'); this.closest('.menu').style.display='none';"><p data-i18n="delete_btn">delete_btn</p><span>Del</span></li>
+  <li id="t_all" onclick="document.execCommand('selectAll'); this.closest('.menu').style.display='none';"><p data-i18n="all_btn">all_btn</p><span>⌘+A</span></li>
+</div>
+
+<div  id="sysmenu">
+
+<div  id="appmenu">
+  
+</div>
+    <button onclick="safeShutdown({ restart: true });"><p data-i18n="restart">restart</p></button>
+    <button onclick="safeShutdown({ restart: false });"><p data-i18n="shutdown">shutdown</p></button>
+</div>
+
+ <footer id="taskbar">
+   <img id="menubtn" src="branding/logo.png" onclick="openMenu(event)"></img>
+
+
+<div id="taskbar-right" class="right">
+<span id="batt"></span>
+<span id="vol"></span>
+  <b class="clock-time"></b>
+</div>
+ </footer>
+ <script src="langs.js"></script>
+  <script src="script.js"></script>
+  <script src="adapt.js"></script>
+
+</body>
+
+</html>
+

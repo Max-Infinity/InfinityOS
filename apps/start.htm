@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinity Search</title>
+    <style>
+    * {
+    box-sizing: border-box;
+}
+
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #202124;
+            --accent-color: #1a0dab;
+            --url-color: #006621;
+            --highlight-bg: #fff59d;
+            --border-color: #dfe1e5;
+            --panel-bg: #f8f9fa;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 5px; display: flex; flex-direction: column; align-items: center; }
+        .search-container {
+    width: 100%;       /* Займає доступний простір */
+    max-width: 500px;  /* Але не стає ширшим за 500px */
+    margin-top: 5px;
+    text-align: center;
+}
+        
+        .search-box { display: flex; border: 1px solid var(--border-color); border-radius: 10px; padding: 5px 5px; transition: box-shadow 0.2s; background: #fff; align-items: center; }
+        .search-box:focus-within { box-shadow: 0 1px 6px rgba(32,33,36,0.28); }
+        input[type="text"] { flex: 1; border: none; outline: none; padding: 10px; font-size: 16px; }
+        button#searchBtn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 0 10px; }
+
+        /* Вкладки пошуку */
+        .search-tabs { display: flex; gap: 20px; margin-top: 15px; width: 100%; justify-content: center; }
+        .tab { padding: 8px 15px; cursor: pointer; font-size: 14px; color: #5f6368; border-bottom: 3px solid transparent; transition: 0.2s; }
+        .tab.active { color: var(--accent-color); border-bottom: 3px solid var(--accent-color); font-weight: bold; }
+
+        .progress-wrapper { width: 100%; height: 4px; background: #eee; border-radius: 2px; margin-top: 10px; overflow: hidden; display: none; }
+
+
+        /* Медіа сітка */
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 20px; }
+        .image-item { border-radius: 8px; overflow: hidden; background: #eee; height: 120px; }
+        .image-item img { width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
+
+        .dashboard { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 15px; width: 95%; max-width: 1200px;margin-top: 25px; }
+        .panel { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 5px; height: 150px; overflow-y: auto; text-align: left; }
+        .panel h4 { margin: 0 0 10px 0; font-size: 11px; color: #888; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+
+        #results { width: 100%; max-width: 700px; margin-top: 20px; }
+        .result-item { margin-bottom: 25px; animation: fadeIn 0.4s ease-out; }
+        img.avatar{
+            width: 50px;
+            height:50px;
+            
+            border-radius:5px;
+        }
+        .result-item a { text-decoration: none; color: var(--accent-color); font-size: 18px; }
+        .highlight { background-color: var(--highlight-bg); font-weight: bold; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Тренди */
+        .trends { margin-top: 15px; display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; min-height: 30px; }
+        .trend-tag { background: #e8f0fe; color: #1967d2; padding: 5px 15px; border-radius: 15px; cursor: pointer; font-size: 15px; border: none; }
+
+button{
+    background: #e8f0fe; color: #1967d2; 
+    margin: 5px 10px;
+     border-radius: 15px; 
+     cursor: pointer; 
+     display: inline-block;
+     border: none; 
+}
+
+h4{
+    display: inline-block;
+}
+        
+
+/* For Webkit browsers (Chrome, Safari, Edge, Opera) */
+progress::-webkit-progress-value {
+  transition: width 0.5s ease-in-out; /* Animates width changes */
+  background-color: #1967d2;
+  border-radius: 100px;
+}
+
+/* For Firefox */
+progress::-moz-progress-bar {
+  transition: width 0.5s ease-in-out;
+  background-color: #1967d2;
+  border-radius: 100px;
+}
+
+
+
+
+    </style>
+</head>
+<body>
+
+<div class="search-container">
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Пошук..." autocomplete="on">
+        <button id="searchBtn">🔍</button>
+    
+
+    </div>
+
+
+
+            
+        <progress style="display: none; width:100%;accent-color:#1967d2 ;" id="progressBar"></progress>
+        
+    <div class="search-tabs">
+        <div class="tab active" onclick="switchTab('all', this)">all</div>
+        <div class="tab" onclick="switchTab('images', this)">pictures</div>
+        <div class="tab" onclick="switchTab('videos', this)">videos</div>
+    </div>
+
+</div>
+
+<div class="dashboard" id="dash">
+
+    <div class="panel"><h4>history<button onclick='localStorage.setItem("browser_history", "[]");loadHistory()'>clear</button> </h4><div id="historyList"></div></div>
+    <div class="panel"><h4>bookmarks</h4><div id="bookmarksList"></div></div>
+    <div class="panel"><h4>downloads</h4><div id="downloadsList"></div></div>
+        <div class="panel">
+        <div id="trends" class="trends"></div>
+    </div>
+</div>
+
+<div id="results"></div>
+
+<script>
+
+
+const inp = parent.parent.getCurrDLang() || parent.parent.dateLang;
+const lang = inp.split("-")[0].toLowerCase();
+console.log(lang)
+
+const translations = {
+    uk: {
+        all: "Усе",
+        pictures: "Зображення",
+        videos: "Відео",
+        search: "Пошук",
+        downloads: "Завантаження",
+        clear: "Очистити",
+        history: "Історія",
+        bookmarks: "Закладки",
+        summary: "Звіт"
+    },
+    en: {
+        all: "All",
+        pictures: "Images",
+        videos: "Videos",
+        search: "Search",
+        downloads: "Downloads",
+        clear: "Clear",
+        history: "History",
+        bookmarks: "Bookmarks",
+        summary: "Summary"
+    },
+    fr: {
+        all: "Tout",
+        pictures: "Images",
+        videos: "Vidéos",
+        search: "Recherche",
+        downloads: "Téléchargements",
+        clear: "Effacer",
+        history: "Historique",
+        bookmarks: "Favoris",
+        summary: "Résumé"
+    },
+    ru: {
+        all: "Все",
+        pictures: "Изображения",
+        videos: "Видео",
+        search: "Поиск",
+        downloads: "Загрузки",
+        clear: "Очистить",
+        history: "История",
+        bookmarks: "Закладки",
+        summary: "Сводка"
+    }
+};
+
+// Визначаємо поточні рядки (якщо мови немає в списку — за замовчуванням англійська)
+const currentStrings = translations[lang] || translations.en;
+
+
+
+
+
+function initLocalization() {
+    document.querySelectorAll('.tab')[0].innerText = currentStrings.all;
+    document.querySelectorAll('.tab')[1].innerText = currentStrings.pictures;
+    document.querySelectorAll('.tab')[2].innerText = currentStrings.videos;
+    
+    // Оновлення заголовків панелей
+    const panels = document.querySelectorAll('.panel h4');
+    panels[0].childNodes[0].textContent = currentStrings.history;
+    panels[1].innerText = currentStrings.bookmarks;
+    panels[2].innerText = currentStrings.downloads;
+    
+    // Кнопка очищення
+    document.querySelector('.panel button').innerText = currentStrings.clear;
+    document.getElementById('searchInput').placeholder = currentStrings.search + "..."
+}
+initLocalization();
+
+
+
+
+const SITE_LIST = localStorage.getItem("SITE_LIST")? JSON.parse(localStorage.getItem("SITE_LIST")) : [
+    
+    'http://pro.incest.win', 
+    'https://stulchik.pro', 
+    'https://'+lang+'.m.wikipedia.org',
+    'https://commons.wikimedia.org',
+    'https://pornmate.com/',
+    'https://xhamster.com/',
+    'https://redtube.com/',
+    'https://www.brazzers.com/',
+    'https://www.naughtyamerica.com/',
+    'https://commons.wikimedia.org/wiki/search',
+    'http://www.ipernity.com/',
+    "https://dev.to/"
+
+];
+
+
+    let searchIndex = [];
+    let currentTab = 'all';
+    let isIndexing = false;
+    let totalToScan = 0;
+    let scannedCount = 0;
+
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+const results = document.getElementById('results');
+const dash = document.getElementById('dash');
+const trends = document.getElementById('trends');
+
+    function switchTab(tab, el) {
+        currentTab = tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        el.classList.add('active');
+        performSearch();
+    }
+
+const DEFAULT_PROXIES = [
+    "https://corsproxy.io/?$url",
+    "https://api.allorigins.win/raw?url=$url",
+    "https://proxy.cors.sh/$url"
+];
+
+// Завантажуємо з пам'яті або ставимо дефолт
+let userProxies = JSON.parse(localStorage.getItem("system_proxies")) || DEFAULT_PROXIES;
+
+async function fetchWithFallback(targetUrl) {
+    const encodedUrl = encodeURIComponent(targetUrl);
+    if (!targetUrl.includes("://")) return 0;
+    let lastError;
+
+    for (let proxyTemplate of userProxies) {
+        try {
+            // Підставляємо URL у шаблон
+            const finalUrl = proxyTemplate.replace("$url", encodedUrl);
+            const res = await fetch(finalUrl);
+            if (res.ok) return res;
+        } catch (err) {
+            lastError = err;
+            console.warn(`Proxy ${proxyTemplate} failed`);
+        }
+    }
+    throw lastError || new Error("Всі проксі недоступні");
+}
+
+
+
+
+async function crawlSite(url, depth = 0, maxDepth = 1) {
+        if (searchIndex.some(p => p.url === url) || depth > maxDepth) return;
+        document.getElementById('progressBar').style.display = 'block';
+        parent.parent.console.log(url)
+        try {
+            
+            if (!url.endsWith("/")) url+= "/";
+            
+            
+            const res = await fetchWithFallback(url);
+
+            const html = await res.text();
+            
+            
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            
+            
+            // Очищення
+            doc.querySelectorAll('script, style, noscript').forEach(t => t.remove());
+
+
+            // Збір медіа з фільтрацією іконок
+const imgs = Array.from(doc.querySelectorAll('img'))
+    .filter(img => {
+        const w = img.getAttribute('width');
+        const h = img.getAttribute('height');
+        
+        // Якщо розміри вказані і вони однакові (квадратні) - пропускаємо.
+        // Також пропускаємо занадто малі зображення (менше 50px).
+        if (w && h && (w === h)) return false;
+        if (w < 100 && h < 100) return false;
+        
+        return true;
+    })
+    .map(img => new URL(img.getAttribute('src'), url).href)
+    .filter(src => src.startsWith('http'));
+
+            const vids = Array.from(doc.querySelectorAll('video')).map(v => new URL(v.getAttribute('src') || v.currentSrc, url).href);
+
+            const text = doc.body.innerText.replace(/\s+/g, ' ').trim();
+            searchIndex.push({ url, title: doc.title || url, content: text, images: imgs, videos: vids });
+
+            if (depth < maxDepth) {
+                const links = [...new Set(Array.from(doc.querySelectorAll('a')).map(a => {
+                    try { let u = new URL(a.getAttribute('href'), url); return u.origin + u.pathname; } catch(e) { return null; }
+                }))].filter(l => l && l.startsWith(url) && l !== url).slice(0, 5);
+
+                totalToScan += links.length;
+                for (let link of links) {
+                    await crawlSite(link, depth + 1);
+                    scannedCount++;
+                    updateProgress();
+                }
+            }
+        } catch (e) { 
+    console.warn("Fetch error:", url, e); 
+} 
+    }
+function jsonToHTML(obj) {
+    let html = "";
+    for (let key in obj) {
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+            // Якщо це об'єкт або масив — робимо вкладений список, що розгортається
+            html += `
+                <details>
+                    <summary style="color: var(--accent-color); font-weight: bold;">${key}</summary>
+                    ${jsonToHTML(obj[key])}
+                </details>`;
+        } else {
+            // Якщо це звичайне значення
+            html += `
+                <div>
+                    <span style="color: #888;">${key}:</span> 
+                    <span style="color: var(--text-color);">${obj[key]}</span>
+                </div>`;
+if (typeof obj[key] === "string" && obj[key].startsWith("http")) {
+    // 1. Фільтруємо сміття (API посилання, картинки, стилі)
+    const isUseful = !obj[key].includes('api.') && !obj[key].includes('usercontent') &&
+                     !obj[key].match(/\.(jpg|jpeg|png|gif|css|js)$/i);
+
+    if (isUseful) {
+        // Додаємо в список, якщо його там ще немає
+        if (!SITE_LIST.includes(obj[key])) {
+            SITE_LIST.push(obj[key]);
+            localStorage.setItem("SITE_LIST", JSON.stringify(SITE_LIST))
+            
+            // 2. Запускаємо сканування ТІЛЬКИ цього нового сайту
+            // Це додасть його контент у результати ПОТОЧНОГО пошуку
+            crawlSite(obj[key]); 
+            
+            parent.parent.console.log("OSINT: Нове джерело знайдено: " + obj[key]);
+        }
+    }
+}
+
+        }
+    }
+    return html;
+}
+
+async function getGravatarHash(email) {
+    const normalized = email.trim().toLowerCase();
+    
+    const encoder = new TextEncoder();
+    const data = encoder.encode(normalized);
+    
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    
+    const hashHex = hashArray
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    
+    return hashHex;
+}
+
+    function updateProgress() {
+        document.getElementById('progressBar').max = totalToScan
+        document.getElementById('progressBar').value = scannedCount;
+        if(scannedCount >= totalToScan) setTimeout(() => document.getElementById('progressBar').style.display = 'none', 100);
+        searchInput.placeholder = currentStrings.search+"... ("+scannedCount+")";
+    }
+
+    async function startIndexing(){
+        if (localStorage.getItem("browser_cache")){
+            searchIndex = JSON.parse(localStorage.getItem("browser_cache"))
+        }else{
+        
+        
+        isIndexing = true;
+        searchIndex = []; scannedCount = 0; totalToScan = SITE_LIST.length;
+        for (let root of SITE_LIST) { await crawlSite(root); scannedCount++; updateProgress();buildTrends(); }
+        isIndexing = false; 
+        try{
+        localStorage.setItem("browser_cache",JSON.stringify(searchIndex))
+        }catch{
+            parent.console.error("Can't save sites. You can ignore this window, but you will need to index sites next time.")
+        }
+        }
+    }
+
+
+async function expandWiki(query, elementId) {
+    const btn = document.getElementById('btn-' + elementId);
+    const container = document.getElementById(elementId);
+    
+
+
+    try {
+        const resFull = await fetchWithFallback(`https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${query}&format=json&origin=*`)
+        const dataFull = await resFull.json();
+        const pages = dataFull.query.pages;
+        const pageId = Object.keys(pages)[0];
+
+        if (pageId !== "-1" && pages[pageId].extract.trim() != "") {
+            // ЗАМІНА ТЕКСТУ:
+            container.innerText = pages[pageId].extract;
+
+            
+        }
+        if (btn) btn.remove();
+    } catch (e) {
+        if (btn) btn.remove();
+        console.error(e);
+    }
+}
+
+
+    async function performSearch() {
+        const q = searchInput.value.trim().toLowerCase();
+        if(!q) { dash.style.display = 'grid';document.getElementById("trends").style.display = 'flex'; results.innerHTML = ''; return; }
+        dash.style.display = 'none'; 
+        results.innerHTML = '';
+        document.getElementById("trends").style.display = 'none';
+
+        const found = searchIndex.filter(p => p.content.toLowerCase().includes(q) || p.title.toLowerCase().includes(q));
+        
+        
+        const githubUrl = `https://api.github.com/users/${encodeURIComponent(q)}`;
+const redditUrl = `https://www.reddit.com/user/${encodeURIComponent(q)}/about.json`;
+const hash = await getGravatarHash(q);
+const avatarUrl = `https://www.gravatar.com/avatar/${hash}`;
+const gravatarUrl = `https://www.gravatar.com/${hash}.json`
+
+
+
+        if (currentTab === 'all') {
+            
+ if (q.includes("@") && q.includes(".")) {
+     // --- GRAVATAR ---
+     try {
+         const res = await fetchWithFallback(gravatarUrl);
+         const data = await res.json();
+         if (data && data.entry) {
+             const profile = data.entry[0];
+             results.innerHTML += `
+                    <div class="result-item">
+                        <hr style="margin: 10px 0; border-color: #ffffff33;">
+                        <img class="avatar" src="${avatarUrl}?s=200">
+                        <h3>${profile.displayName || profile.preferredUsername}</h3>
+                        <p>${profile.aboutMe || ''}</p>
+                        <details><summary>Raw JSON Data</summary>${jsonToHTML(data)}</details>
+                    </div>`;
+         }
+     } catch (e) {}
+ } else {
+// --- WIKIPEDIA ---
+try {
+    const resSummary = await fetchWithFallback(`https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`);
+    const dataSummary = await resSummary.json();
+    
+    if (dataSummary.extract) {
+        // Створюємо унікальний ID для цього звіту (на випадок кількох пошуків)
+        const reportId = 'wiki-text-' + Date.now();
+        
+        results.innerHTML += `
+            <div class="result-item">
+                <h2>${currentStrings.summary}: ${dataSummary.title}</h2>
+                <div id="${reportId}">${dataSummary.extract}</div>
+                <a id="btn-${reportId}"
+                    onclick="expandWiki('${encodeURIComponent(q)}', '${reportId}')">
+                    ...
+                </a>
+            </div>`;
+    }
+} catch (e) { console.error("Wiki Error:", e); }
+
+
+
+     // --- REDDIT ---
+     try {
+         const res = await fetchWithFallback(redditUrl);
+         const json = await res.json();
+         if (json.data && !json.error) {
+             const d = json.data;
+             const icon = d.icon_img.split("?")[0]; // Очищення URL від зайвих параметрів
+             results.innerHTML += `
+                    <div class="result-item">
+                        <hr style="margin: 10px 0; border-color: #ffffff33;">
+                        <img class="avatar" src="${icon}">
+                        <h3>${d.name} ${d.is_employee ? " [Staff]" : ""}${d.verified ? "✓":""}</h3>
+                        <details><summary>Reddit</summary>${jsonToHTML(json)}</details>
+                    </div>`;
+         }
+     } catch (e) {}
+     
+     // --- GITHUB ---
+     try {
+         const res = await fetchWithFallback(githubUrl);
+         const data = await res.json();
+         if (data.login) {
+             results.innerHTML += `
+                    <div class="result-item">
+                        <hr style="margin: 10px 0; border-color: #ffffff33;">
+                        <img class="avatar" src="${data.avatar_url}">
+                        <h3>${data.name || data.login}</h3>
+                        <i>${data.bio || ''}</i>
+                        <details><summary>GitHub</summary>${jsonToHTML(data)}</details>
+                    </div>`;
+         }
+     } catch (e) {}
+ }
+
+
+            found.forEach(p => {
+                const idx = p.content.toLowerCase().indexOf(q);
+                const snip = "..." + p.content.substring(Math.max(0, idx-50), idx+150) + "...";
+                results.innerHTML += `<div class="result-item"><a onclick="parent.loadPage('${p.url}')"><h3>${p.title}</h3></a><span style="color:green;font-size:12px">${p.url}</span><p>${snip.replace(new RegExp(q, 'gi'), m => `<span class="highlight">${m}</span>`)}</p></div>`;
+            });
+        } else if (currentTab === 'images') {
+            let html = '<div class="image-grid">';
+            found.forEach(p => p.images.forEach(src => { html += `<div class="image-item"><img src="${src}" href="${src}" onerror="this.parentElement.remove()"></div>`; }));
+            results.innerHTML = html + '</div>';
+        } else if (currentTab === 'videos') {
+            found.forEach(p => p.videos.forEach(src => { results.innerHTML += `<div class="result-item"><video width="100%" preload="metadata" controls height="200" src="${src+"#t=0.001"}"  onerror="this.parentElement.remove()"></video><br><small>${p.title}</small></div>`; }));
+        }
+    }
+
+    function buildTrends() {
+        const words = {};
+        searchIndex.forEach(p => (p.content.toLowerCase().match(/[a-zа-яіїє]{5,}/gi) || []).forEach(w => words[w] = (words[w] || 0) + 1));
+        const top = Object.entries(words).sort((a,b) => b[1]-a[1])
+        trends.innerHTML = top.map(([w]) => `<button class="trend-tag" onclick="searchInput.value='${w}';performSearch()">${w}</button>`).slice(-10).join('');
+    }
+
+    searchBtn.onclick = async () => { if(!searchIndex.length) await startIndexing(); performSearch();  };
+    searchInput.onkeypress = async (e) => { if(e.key==='Enter') { if(!searchIndex.length) await startIndexing(); performSearch(); }};
+	const loadDownloads = () => {
+const filtered = parent.parent.getFs().filter(file => file.name.startsWith(parent.getDownloadsFolder()));
+
+const downloadsHtml = filtered.map(file => {
+const date = new Date(file.lastModified);
+        const timeStr = date.toLocaleString(inp, { 
+            day: 'numeric', 
+            month: 'long', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+
+return `
+            <div class="panel-item" title="${file.name}">
+                <span style="color: #999; font-size: 10px; display: block;">${timeStr}</span>
+                <a onclick="parent.parent.Openf(null, null, parent.parent.getMimeType(${file.name}), ${file.name})">
+                    ${file.name}
+                </a>
+            </div>`;
+}).join('');
+
+    document.getElementById('downloadsList').innerHTML = downloadsHtml || '';;
+
+}
+    const loadHistory = () => {
+        let hist = JSON.parse(localStorage.getItem("browser_history") || "[]");
+        let historyHtml;
+        if (hist.length === 0 || hist == "[]" || hist == null){
+            historyHtml = '';
+            return 0;
+        }
+
+    // 2. Фільтруємо: видаляємо всі записи, де url дорівнює 'start.htm'
+    const cleanHist = hist.filter(i =>( i.url !== 'start.htm') ||( i.url.includes("blob:")) );
+
+    // Якщо історія змінилася (були видалені start.htm), оновлюємо localStorage
+    if (cleanHist.length !== hist.length) {
+        localStorage.setItem("browser_history", JSON.stringify(cleanHist));
+    }
+
+    // 3. Форматуємо дату та виводимо 
+     historyHtml = cleanHist.slice(-10).reverse().map(i => {
+
+        const date = new Date(i.time);
+        const timeStr = date.toLocaleString(inp, { 
+            day: 'numeric', 
+            month: 'long', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+
+        return `
+            <div class="panel-item" title="${i.url}">
+                <span style="color: #999; font-size: 10px; display: block;">${timeStr}</span>
+                <a onclick="parent.loadPage('${i.url}')">
+                    ${i.url}
+                </a>
+            </div>`;
+    }).join('');
+
+    document.getElementById('historyList').innerHTML = historyHtml || '';
+        
+    };
+    loadHistory();
+    loadDownloads()
+    
+window.onerror = (e) =>{
+    parent.parent.console.error(e.message);
+}
+</script>
+</body>
+</html>

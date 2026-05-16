@@ -1,0 +1,566 @@
+<!DOCTYPE html>    
+<html lang="uk">    
+<head>    
+<meta charset="UTF-8">    
+<meta name="viewport" content="width=device-width, initial-scale=1.0">    
+<link rel="stylesheet" href="global.css">    
+    
+<style>    
+body{  
+  height: fit-content;  
+  padding: 0;
+  margin: 0;
+  padding-bottom: 15px;  
+}  
+
+   
+    
+
+</style>    
+</head>    
+    
+<body>    
+        
+<!-- Hidden file input for CSV import -->    
+<input type="file" id="csvFileInput" accept="*.csv" style="display:none">    
+    
+            <div style="height: 100%; display: flex;white-space: nowrap; flex-direction: column;">
+                <div style="flex-shrink: 0; padding: 5px; border-bottom: 1px solid #ccc; background-color: #f0f0f0; display: flex; align-items: center; gap: 5px;">
+                      <button onclick="exportCSV()">Export</button>
+        <vr></vr>
+      <button onclick="undo()">↩</button>
+      <button onclick="redo()">↪</button>
+</div>
+
+    
+<content>    
+
+  <div id="sheetWrapper" class="sheet-wrapper">    
+    <div id="sheet" class="sheet"></div>    
+  </div>    
+    
+
+    
+</content>    
+    
+<script>    
+let editing = 0;  
+let draft = 0;  
+      
+let rows = 150;    
+let cols = 26;    
+    
+/* ===== UNDO / REDO ===== */    
+const undoStack = [];    
+const redoStack = [];    
+let suppressHistory = false;    
+    
+/* ===== DOM ===== */    
+const wrapper = document.getElementById("sheetWrapper");    
+const sheet = document.getElementById("sheet");    
+  
+    
+/* ===== STATE ===== */    
+const data = {};    
+let selectedCell = null;    
+/* ===== GRID SETUP ===== */   
+  
+function clearTable() {  
+  suppressHistory = true;  
+  
+  document.querySelectorAll(".cell").forEach(cell => {  
+    const input = cell.querySelector("input");  
+    input.value = "";  
+  });  
+  
+  Object.keys(data).forEach(k => delete data[k]);  
+  
+  suppressHistory = false;  
+}  
+function clearUIState() {  
+  if (selectedCell) selectedCell.classList.remove("selected");  
+  selectedCell = null;  
+  handle.style.display = "none";  
+}  
+  
+function openWizard(){  
+    document.getElementById('createWizard').style.display="flex";  
+}  
+  
+function closeWizard(){  
+document.getElementById('createWizard').style.display="none";  
+}  
+  
+function closeTable(){  
+document.getElementById('home').style.display="block";  
+document.querySelectorAll('content')[0].style.padding = "10px";  
+document.getElementById('edit').style.display = 'none';  
+wrapper.style.display="none";  
+editing = 0;  
+draft = 1;  
+  
+if (draft){  
+    document.getElementById('continue').style.display = "block";  
+}else{  
+    document.getElementById('continue').style.display = "none";  
+}  
+}  
+  
+function openTable(){  
+// Показ без очистки (продовження редагування)  
+    editing = 1;  
+document.getElementById('home').style.display="none";  
+document.querySelectorAll('content')[0].style.padding = "0";  
+document.getElementById('edit').style.display = 'flex';  
+wrapper.style.display="block";  
+document.getElementById('createWizard').style.display="none";  
+rows=document.getElementById('wizRows').value;  
+cols=document.getElementById('wizCols').value;  
+}  
+const textMeasurer = document.createElement("span");  
+textMeasurer.style.position = "absolute";  
+textMeasurer.style.visibility = "hidden";  
+textMeasurer.style.whiteSpace = "pre";
+
+let colWidths = Array(cols).fill(50);  
+
+  
+function createTable(){  
+// Показ таблиці та інжикатора завантаження  
+loading.style.display = "block"; // show loading    
+editing = 1;  
+document.getElementById('home').style.display="none";  
+document.querySelectorAll('content')[0].style.padding = "0";  
+document.getElementById('edit').style.display = 'flex';  
+wrapper.style.display="block";  
+document.getElementById('createWizard').style.display="none";  
+rows=document.getElementById('wizRows').value;  
+cols=document.getElementById('wizCols').value;  
+
+colWidths.length = 0;
+for (let i = 0; i < cols; i++) {
+  colWidths.push(50);
+}
+applyGrid();
+
+sheet.style.gridTemplateColumns =
+  "40px " + colWidths.map(w => w + "px").join(" ");
+applyGrid();
+    
+/* ===== COLUMN HEADERS ===== */    
+// Очистка таблиці та створення заново  
+clearUIState();  
+ clearTable();  
+ sheet.innerHTML = '';  
+sheet.appendChild(document.createElement("div"));    
+    
+for (let c = 0; c < cols; c++) {    
+  const h = document.createElement("div");    
+  h.className = "header-cell";    
+  h.textContent = String.fromCharCode(65 + c);    
+  sheet.appendChild(h);    
+}    
+    
+/* ===== ROWS ===== */    
+for (let r = 0; r < rows; r++) {    
+  const rowHeader = document.createElement("div");    
+  rowHeader.className = "header-cell";    
+  rowHeader.textContent = r + 1;    
+  sheet.appendChild(rowHeader);    
+    
+  for (let c = 0; c < cols; c++) {    
+    const cell = document.createElement("div");    
+    cell.className = "cell";    
+    cell.dataset.row = r;    
+    cell.dataset.col = c;    
+    
+    const input = document.createElement("input");    
+      
+      
+  
+   // Додаємо обробник кастомної екранної клавіатури вручну. Автоматичне створення тут не працює, бо поля створюються після того, як обробники встановлені.  
+input.addEventListener('focus', (e) => {  
+        parent.OSKeyboard.open(e.target);  
+    })  
+    input.type = "text";    
+    input.spellcheck = false;    
+    
+    /* --- SELECT CELL --- */    
+       
+const MIN_COL_WIDTH = 35; // same as current min-height/width    
+  
+    /* --- EDIT CELL --- */    
+    cell.addEventListener("touchend", (e) => {    
+      e.preventDefault();   
+      if (selectedCell === cell){  
+        input.focus();  
+        resizeColumn(cell.dataset.col)  
+      }else{  
+        input.blur();  
+        selectCell(cell);    
+      }  
+    });    
+    
+    /* --- SAVE DATA --- */    
+    input.addEventListener("input", () => {    
+      saveCell(cell, input.value);    
+    });    
+    
+    /* --- BLOCK ENTER --- */    
+    input.addEventListener("keydown", e => {    
+      if (e.key === "Enter") {    
+        e.preventDefault();    
+        input.blur();    
+          
+      }    
+    });    
+    
+    cell.appendChild(input);    
+    sheet.appendChild(cell);    
+    textMeasurer.style.font = getComputedStyle(  
+  document.querySelector(".cell input")  
+).font;  
+  }    
+}    
+loading.style.display = "none"; // hide loading    
+  }  
+/* ===== DATA + HISTORY ===== */    
+function saveCell(cell, value) {    
+  const key = `${cell.dataset.row},${cell.dataset.col}`;    
+  const old = data[key] ?? "";    
+    
+  if (!suppressHistory && old !== value) {    
+    undoStack.push({ key, old, value });    
+    redoStack.length = 0;    
+  }    
+    
+  data[key] = value;    
+}    
+    
+function setCellByKey(key, value) {    
+  const [r, c] = key.split(",");    
+  const cell = document.querySelector(    
+    `.cell[data-row="${r}"][data-col="${c}"]`    
+  );    
+  if (!cell) return;    
+    
+  const input = cell.querySelector("input");    
+  input.value = value;    
+  data[key] = value;    
+}    
+    
+/* ===== SELECTION ===== */    
+function selectCell(cell) {    
+  if (selectedCell) selectedCell.classList.remove("selected");    
+  selectedCell = cell;    
+  cell.classList.add("selected");    
+  updateHandle();    
+}    
+    
+/* ===== FILL HANDLE ===== */    
+const handle = document.createElement("div");    
+handle.className = "fill-handle";    
+handle.style.display = "none";    
+wrapper.appendChild(handle);    
+    
+function updateHandle() {    
+  if (!selectedCell) return;    
+    
+  const cr = selectedCell.getBoundingClientRect();    
+  const wr = wrapper.getBoundingClientRect();    
+    
+  handle.style.left = (cr.right - wr.left + wrapper.scrollLeft - 7.5) + "px";    
+  handle.style.top = (cr.bottom - wr.top + wrapper.scrollTop - 7.5) + "px";    
+  handle.style.display = "block";    
+}    
+    
+wrapper.addEventListener("scroll", updateHandle);    
+    
+/* ===== SMART AUTOFILL ===== */    
+let filling = false;    
+    
+handle.addEventListener("touchstart", e => {    
+  e.preventDefault();    
+  filling = true;    
+});    
+    
+document.addEventListener("touchmove", e => {    
+  if (!filling || !selectedCell) return;    
+    
+  const t = document.elementFromPoint(    
+    e.touches[0].clientX,    
+    e.touches[0].clientY    
+  );    
+    
+  if (t && t.classList.contains("cell")) {    
+    smartAutofill(selectedCell, t);    
+  }    
+});    
+    
+document.addEventListener("touchend", () => filling = false);    
+    
+function smartAutofill(source, target) {    
+  const sr = +source.dataset.row;    
+  const tr = +target.dataset.row;    
+  const c = +source.dataset.col;    
+    
+  const base = source.querySelector("input").value;    
+  const start = Math.min(sr, tr);    
+  const end = Math.max(sr, tr);    
+    
+  const num = Number(base);    
+  const isNumber = !isNaN(num) && base.trim() !== "";    
+  const isUpper = /^[A-Z]$/.test(base);    
+  const isLower = /^[a-z]$/.test(base);    
+  const charCode = base.charCodeAt(0);    
+    
+  for (let r = start; r <= end; r++) {    
+    if (r === sr) continue;    
+    
+    const cell = document.querySelector(    
+      `.cell[data-row="${r}"][data-col="${c}"]`    
+    );    
+    if (!cell) continue;    
+    
+    let value = base;    
+    if (isNumber) value = num + (r - sr);    
+    else if (isUpper || isLower)    
+      value = String.fromCharCode(charCode + (r - sr));    
+      if (isUpper) {  
+  const code = charCode + (r - sr);  
+  if (code > 90) return;  
+  value = String.fromCharCode(code);  
+}  
+if (isLower) {  
+  const code = charCode + (r - sr);  
+  if (code > 122) return;  
+  value = String.fromCharCode(code);  
+}  
+    
+    const input = cell.querySelector("input");    
+    input.value = value;    
+    saveCell(cell, value);    
+  }    
+}    
+    
+/* ===== UNDO / REDO ===== */    
+function undo() {    
+  const action = undoStack.pop();    
+  if (!action) return;    
+    
+  suppressHistory = true;    
+  setCellByKey(action.key, action.old);    
+  suppressHistory = false;    
+    
+  redoStack.push(action);    
+}    
+    
+function redo() {    
+  const action = redoStack.pop();    
+  if (!action) return;    
+    
+  suppressHistory = true;    
+  setCellByKey(action.key, action.value);    
+  suppressHistory = false;    
+    
+  undoStack.push(action);    
+}    
+    
+function exportCSV() {    
+  const lines = [];    
+  for (let r = 0; r < rows; r++) {    
+    const row = [];    
+    for (let c = 0; c < cols; c++) {    
+      let value = data[`${r},${c}`] ?? "";    
+      if (value.includes(",")) value = `"${value}"`; // escape    
+      row.push(value);    
+    }    
+    lines.push(row.join(","));    
+  }    
+  const csvContent = lines.join("\n");    
+  const blob = new Blob([csvContent], { type: "text/csv" });    
+  const url = URL.createObjectURL(blob);    
+  const a = document.createElement("a");    
+  a.href = url;    
+  a.download = "spreadsheet.csv";    
+  a.click();    
+  URL.revokeObjectURL(url);    
+}    
+    
+const csvInput = document.getElementById("csvFileInput");    
+const loading = document.getElementById("loading");    
+    
+/* ---------- Open file picker ---------- */    
+function pickCSVFile() {    
+createTable();  
+  csvInput.click();    
+}    
+  
+function applyGrid() {  
+  sheet.style.gridTemplateColumns =  
+    "40px " + colWidths.map(w => w + "px").join(" ");  
+}  
+  
+applyGrid();  
+  
+  
+    
+/* ---------- Handle file selection ---------- */    
+csvInput.addEventListener("change", () => {    
+  const file = csvInput.files[0];    
+  if (!file) return;    
+    
+  loading.style.display = "block"; // show loading    
+    
+  const reader = new FileReader();    
+  reader.onload = e => {    
+    const text = e.target.result;    
+    fillTableFromCSV(text);    
+    loading.style.display = "none"; // hide loading    
+    csvInput.value = ""; // reset for next import    
+  };    
+    
+  reader.readAsText(file);    
+});    
+    
+    
+/* ---------- Parse CSV and fill table ---------- */    
+function fillTableFromCSV(csvText) {  
+  const rowsData = parseCSV(csvText);  
+  
+    
+  
+    
+  
+  rowsData.forEach((row, r) => {  
+    row.forEach((value, c) => {  
+      const cell = document.querySelector(  
+        `.cell[data-row="${r}"][data-col="${c}"]`  
+      );  
+      if (!cell) return;  
+  
+      const input = cell.querySelector("input");  
+      input.value = value;  
+      saveCell(cell, value);  
+    });  
+  });  
+  
+  for (let c = 0; c < cols; c++) resizeColumn(c);  
+}  
+  
+function parseCSV(text) {  
+  const rows = [];  
+  let row = [];  
+  let current = "";  
+  let inQuotes = false;  
+  
+  for (let i = 0; i < text.length; i++) {  
+    const char = text[i];  
+    const next = text[i + 1];  
+  
+    if (char === '"' && inQuotes && next === '"') {  
+      current += '"';  
+      i++;  
+      continue;  
+    }  
+  
+    if (char === '"') {  
+      inQuotes = !inQuotes;  
+      continue;  
+    }  
+  
+    if (char === ',' && !inQuotes) {  
+      row.push(current);  
+      current = "";  
+      continue;  
+    }  
+  
+    if ((char === '\n' || char === '\r') && !inQuotes) {  
+      if (current || row.length) {  
+        row.push(current);  
+        rows.push(row);  
+      }  
+      row = [];  
+      current = "";  
+      if (char === '\r' && next === '\n') i++;  
+      continue;  
+    }  
+  
+    current += char;  
+  }  
+  
+  if (current || row.length) {  
+    row.push(current);  
+    rows.push(row);  
+  }  
+  
+  return rows;  
+}  
+  
+    
+/* ---------- Basic CSV parsing with quotes ---------- */    
+function parseCSVLine(line) {    
+  const result = [];    
+  let current = "";    
+  let inQuotes = false;    
+    
+  for (let i = 0; i < line.length; i++) {    
+    const char = line[i];    
+    
+    if (char === '"' && (i === 0 || line[i - 1] !== '\\')) {    
+      inQuotes = !inQuotes;    
+      continue;    
+    }    
+    
+    if (char === "," && !inQuotes) {    
+      result.push(current.trim());    
+      current = "";    
+    } else {    
+      current += char;    
+        
+    }    
+  }    
+    
+  result.push(current.trim());    
+  return result;    
+}    
+  
+  
+const colHeaders = document.getElementById("colHeaders");  
+const rowHeaders = document.getElementById("rowHeaders");  
+  
+  
+  
+document.body.appendChild(textMeasurer);  
+  
+function resizeColumn(c) {  
+  let maxWidth = 50; // мінімум  
+  console.log(cols+" cols.")
+  
+   document.querySelectorAll(`.cell[data-col="${c}"] input`)  
+    .forEach(input => {  
+      const text = input.value;  
+      if (!text) return;  
+  
+      textMeasurer.textContent = text;  
+      const w = textMeasurer.offsetWidth + 12; // padding  
+  
+      maxWidth = Math.max(maxWidth, w);  
+    });  
+  
+  colWidths[c] = maxWidth;  
+  applyGrid();  
+}  
+    
+/* ===== APP ===== */    
+function closeApp() {    
+if (editing){  
+    closeTable();  
+}else{  
+  if (window.parent?.closeApp) window.parent.closeApp();  
+  }  
+}    
+</script>    
+    
+</body>    
+</html>

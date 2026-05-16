@@ -1,0 +1,552 @@
+/* =============================================
+   DESIGN TOKENS
+   ============================================= */
+:root {
+  /* Brand */
+  --accent-color: #326ba8;
+
+  /* Backgrounds */
+  --bg-body:             white;
+  --bg-splash:           black;
+  --bg-menu:             rgba(0, 0, 0, 0.5);
+  --bg-menu-item-hover:  rgba(0.5, 0.5, 0.5, 0.5);
+  --bg-progress-track:   #7F7F7F;
+  --bg-progress-fill:    white;
+  --bg-panel: transparent;
+
+  /* Text */
+  --color-text-primary:     black;
+  --color-text-secondary:   gray;
+  --color-text-muted:       darkgray;
+  --color-text-tretiary: white;
+  --taskbar-height: 35px;
+
+
+
+  /* Window */
+  --color-win-act: transparent;
+  --color-win-ina: transparent;
+
+  /* Selection */
+  --color-selection:        rgb(0, 110, 180);
+
+  /* Shadows */
+  --shadow-notification:    0 10px 30px rgba(0, 0, 0, 0.4);
+
+
+  /* Radius */
+  --radius-sm:   5px;
+  --radius-md:   10px;
+  --radius-lg:   20px;
+  --radius-pill: 50px;
+  --radius-full: 100px;
+  
+  /* Blur */
+  --blur: 10px;
+
+  /* Transitions */
+  --transition-fade:  opacity 0.5s ease-out, visibility 0.5s;
+  --transition-grow:  background-size 0.1s ease-in-out;
+  
+  --info-text: #fff;
+}
+
+
+/* =============================================
+   BASE
+   ============================================= */
+
+body {
+  background-color: teal !important;
+  background-size: cover;
+  background-repeat: no-repeat;
+  overflow: hidden !important;
+  margin: 0;
+  padding: 0;
+
+  user-select: none;
+  scroll-behavior: smooth;
+}
+
+
+
+/* =============================================
+   SPLASH SCREEN
+   ============================================= */
+#splash {
+  position: fixed;
+  background: var(--bg-splash);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999999999;
+  cursor: none !important;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  opacity: 1;
+  transition: var(--transition-fade);
+  visibility: visible;
+}
+
+#splash.hidden {
+  opacity: 0;
+  visibility: hidden;
+  display: none;
+}
+
+.tra:not(.win_cla) .wb-body{
+background:transparent !important;
+color:white !important; 
+text-shadow: 0 1px 1px #000;
+}
+
+/* =============================================
+   PROGRESS BAR
+   ============================================= */
+#loadprg {
+  height: 6px;
+  appearance: none;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+
+  width: min(60vw, 200px);
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-progress-track);
+  border: none;
+  overflow: hidden;
+  margin-top: 25px;
+  display: block;
+}
+
+#loadprg::-webkit-progress-value {
+  background-color: var(--bg-progress-fill);
+  transition: width 0.15s ease-in-out;
+}
+
+#loadprg::-moz-progress-bar {
+  background-color: var(--bg-progress-fill);
+}
+
+#loadprg::-webkit-progress-bar {
+  background-color: var(--bg-progress-track);
+  border-radius: var(--radius-pill);
+}
+
+
+
+
+/* =============================================
+   CHECKBOX (inside .menu)
+   ============================================= */
+.menu input[type="checkbox"] {
+  appearance: none;
+  width: 15px;
+  margin-left: 0;
+  height: 15px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  line-height: 1;
+  vertical-align: middle;
+  transition: all 0.18s ease;
+}
+
+.menu input[type="checkbox"]:checked {
+  line-height: 1;
+}
+
+.menu input[type="checkbox"]:checked::after {
+  content: "✔";
+  font-size: 15px;
+  border: solid 1px rgba(1, 1, 1, 0.5);
+  border-radius: var(--radius-full);
+  color: var(--accent-color);
+}
+
+.menu input[type="checkbox"]:disabled {
+  opacity: 0.5;
+}
+
+
+/* =============================================
+   CONTEXT MENU
+   ============================================= */
+.menu {
+  padding: 5px;
+  border-radius: var(--radius-md);
+  position: absolute;
+  z-index: 99999;
+  display: none;
+  transform-origin: top left;
+  animation: grow 0.2s ease-out forwards;
+  background: var(--bg-menu);
+  
+}
+
+@keyframes grow {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.menu > li {
+  border-radius: var(--radius-md);
+  list-style: none;
+  color: var(--color-text-tretiary);
+  padding: 5px;
+  height: 20px !important;
+}
+
+.menu > li > p,
+.menu > li > label {
+  display: inline-block;
+  margin: 0;
+}
+
+.menu > li:hover {
+  background: var(--bg-menu-item-hover);
+}
+
+.menu > li > span {
+  padding-left: 5px;
+  color: var(--color-text-muted);
+}
+
+
+/* =============================================
+   SELECTION
+   ============================================= */
+::selection {
+  background-color: var(--color-selection);
+}
+
+
+/* =============================================
+   DESKTOP ICON GRID
+   ============================================= */
+  
+#desktopApps {
+  display: grid;
+  grid-template-rows: repeat(auto-fit, minmax(12vh, 80px));
+  grid-auto-flow: column;
+  grid-auto-columns: 80px;
+  justify-content: flex-start;
+  gap: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+body.taskbar-at-top #desktopApps{
+  margin-top: var(--taskbar-height);
+}
+
+#desktopApps > div {
+  height: 80px;
+  width: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  text-align: center;
+  padding: 15px;
+  filter: drop-shadow(0 0 1px black);
+  transition: all 0.85s;
+}
+
+
+/* =============================================
+   MISC
+   ============================================= */
+iframe #document {
+  background: rgba(0, 0, 0, 0);
+}
+
+#notify {
+  color: var(--color-text-secondary);
+}
+
+
+
+/* =============================================
+   WINBOX — MINIMIZED
+   ============================================= */
+.winbox.max {
+  height: calc(100% - var(--taskbar-height)) !important;
+}
+
+body.taskbar-at-top .winbox.max {
+    top: var(--taskbar-height) !important;
+}
+
+/* Якщо таскбар знизу */
+.winbox.min {
+  bottom: 0 !important; /* ПРИМУСОВО притискаємо */
+  top: calc(100% - var(--taskbar-height)) !important;
+  
+  /* Притискаємо до самого низу */
+  
+  left: 40px !important;
+z-index: 9999;
+/* Додаємо !important, щоб JS-розрахунки бібліотеки не заважали */
+height: var(--taskbar-height) !important;
+min-height: var(--taskbar-height) !important;
+max-height: var(--taskbar-height) !important;
+}
+
+/* Якщо таскбар зверху, WinBox може ставити top: 5px */
+body.taskbar-at-top .winbox.min {
+  top: 0 !important;
+  bottom: auto;
+}
+
+
+
+
+
+
+
+.winbox.min .wb-control {
+  display: none;
+}
+
+
+/* =============================================
+   WINBOX — GLASS THEME
+   ============================================= */
+.glass-theme, .win_aero {
+    text-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* Сучасна тінь */
+    border: solid 1px #aaaaaa55;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px); /* Сумісність */
+    
+}
+
+.win_cla{
+box-shadow: none;
+animation: none !important;
+transform: none !important;
+}
+
+.winbox{
+animation: grow 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+border-radius: var(--radius-md); /* Заокруглення для сучасного вигляду */
+
+}
+
+.winbox:not(.audio) {
+  background: var(--color-win-ina) !important;
+
+}
+
+
+
+.winbox.focus
+{
+  background: var(--color-win-act) !important;
+}
+
+
+
+
+
+/* 2. Стилізація тіла вікна (контент) */
+.winbox .wb-body {
+    /* Забезпечуємо, щоб тіло вікна також було прозорим/або темним, якщо це потрібно */
+    margin: 5px; /* Прибираємо  відступ, якщо він заважає */
+    color: #000; /* Білий текст для контрасту з темним фоном */
+    background: var(--bg-body);
+    border-radius: var(--radius-md);
+    transition: all, 0.5s;
+}
+
+/* 3. Стилізація заголовка */
+.winbox .wb-title {
+    color: #fff; /* Білий заголовок */
+    cursor: url("files.svg"),auto;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5); /* Для читабельності */
+}
+
+.winbox .wb-control > *{
+  transform: scale(0.95);
+  border-radius: var(--radius-md);
+  background-size: 0px; /* ЗНАЧОК ПРИХОВАНО: нульовий розмір фону */
+  background-repeat: no-repeat;
+  background-position: center;
+  background-blend-mode: overlay;
+  transition: background-size 0.1s ease-in-out; /* Додаємо плавний перехід */
+}
+
+/* 2. ПОКАЗУЄМО ІКОНКУ ПРИ НАВЕДЕННІ НА КОЖНУ КНОПКУ */
+.winbox .wb-control > *:hover {
+    background-size: 70%; /* ЗНАЧОК ПОКАЗАНО: встановлюємо видимий розмір */
+}
+.winbox .wb-max {
+  background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2Utd2lkdGg9IjIuNSIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBkPSJNOCAzSDVhMiAyIDAgMCAwLTIgMnYzbTE4IDBWNWEyIDIgMCAwIDAtMi0yaC0zbTAgMThoM2EyIDIgMCAwIDAgMi0ydi0zTTMgMTZ2M2EyIDIgMCAwIDAgMiAyaDMiLz48L3N2Zz4=);
+  background-color: rgba(35, 140, 35, 60%);
+}
+
+.winbox.max .wb-max {
+  background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9IiNmZmYiIHZpZXdCb3g9IjAgMCA5NiA5NiI+PHBhdGggZD0iTTIwIDcxLjMxMUMxNS4zNCA2OS42NyAxMiA2NS4yMyAxMiA2MFYyMGMwLTYuNjMgNS4zNy0xMiAxMi0xMmg0MGM1LjIzIDAgOS42NyAzLjM0IDExLjMxMSA4SDI0Yy0yLjIxIDAtNCAxLjc5LTQgNHY1MS4zMTF6Ii8+PHBhdGggZD0iTTkyIDc2VjM2YzAtNi42My01LjM3LTEyLTEyLTEySDQwYy02LjYzIDAtMTIgNS4zNy0xMiAxMnY0MGMwIDYuNjMgNS4zNyAxMiAxMiAxMmg0MGM2LjYzIDAgMTItNS4zNyAxMi0xMnptLTUyIDRjLTIuMjEgMC00LTEuNzktNC00VjM2YzAtMi4yMSAxLjc5LTQgNC00aDQwYzIuMjEgMCA0IDEuNzkgNCA0djQwYzAgMi4yMS0xLjc5IDQtNCA0SDQweiIvPjwvc3ZnPg==);
+  background-color: rgba(35, 140, 35, 60%);
+}
+
+.winbox .wb-min {
+  background-color: rgb(255, 215, 0, 60%);
+}
+
+
+
+.winbox .wb-close {
+  background-color: rgba(220, 20, 60, 60%);
+}
+
+
+.winbox.max {
+    
+    border-radius: 0;
+    border: none;
+}
+
+
+.winbox.max .wb-body {
+    border-radius: 0;
+}
+
+
+
+
+
+.winbox.min .wb-control  {
+    display: none;
+}
+
+.winbox.max .wb-close  {
+    border-top-right-radius: 0;
+}
+
+
+
+
+/* =============================================
+   FOOTER / TASKBAR
+   ============================================= */
+footer {
+  position: fixed;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  bottom: 0;
+  margin: 0;
+  padding: 5px;
+  width: 100vw;
+border-radius: none;
+
+  color: var(--color-text-tretiary);
+  font-size: 20px;
+  background: var(--bg-panel) !important;
+  height: calc(var(--taskbar-height) - 10px);
+}
+
+#sysmenu {
+  position: fixed;
+  z-index: 100;
+  font-size: 20px;
+  background: var(--bg-panel) !important;
+  display: none;
+  
+  bottom: var(--taskbar-height);
+  top: auto;
+  border-radius: 0px;
+  border-top-right-radius: var(--radius-md);
+}
+
+body.taskbar-at-top #sysmenu{
+top: var(--taskbar-height);	
+border-radius: 0px;
+border-bottom-right-radius: var(--radius-md);
+bottom: auto;
+}
+
+#appmenu button {
+  border-bottom: 1px solid #aaaaaa55 !important;
+}
+
+#sysmenu *{
+background: none !important;
+border: none !important; 
+color: var(--color-text-tretiary);
+}
+
+footer > img {
+  height: 25px;
+  border-radius: var(--radius-full);
+}
+
+.right {
+  margin-right: 15px;
+}
+
+vr {
+  display: inline-block;
+  width: 1px;
+  height: 100%;
+  background: #00000033;
+  margin: 3px 0;
+}
+
+
+/* =============================================
+   NOTIFICATION TOAST
+   ============================================= */
+.notification {
+  position: fixed;
+  right: 15px;
+  bottom: calc(var(--taskbar-height) + 10px);
+  top: auto;
+  min-width: 10%;
+  min-height: 60px;
+  background: var(--info-bg, rgba(30, 30, 30, 0.5));
+
+color: var(--info-text, --color-text-secondary);
+  padding: 10px 15px;
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(var(--blur, 10px));
+
+  z-index: 999999;
+  box-shadow: var(--shadow-notification);
+  font-size: 15px;
+  transform: translateX(100%);
+  opacity: 0;
+  animation: slideIn 0.4s ease-out forwards,
+             slideOut 0.5s 2.0s ease-in forwards;
+}
+
+body.taskbar-at-top .notification {
+  top: calc(var(--taskbar-height) + 10px);
+  bottom: auto;
+}
+
+@keyframes slideIn {
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideOut {
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+
+/* =============================================
+   CLOCK
+   ============================================= */
+.clock-time {
+  font-variation-settings: "wght" 100, "wdth" 50;
+  transition: all 0.5s ease;
+}
+

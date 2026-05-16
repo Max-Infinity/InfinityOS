@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="global.css">
+    
+  
+
+</head>
+<body>
+    <div style="height: 100%; display: flex; white-space: nowrap; flex-direction: column;">
+        <div id="web-toolbar" class="toolbar">
+            <button onclick="goBack();"> < </button>
+            <button onclick="goFwd();"> > </button>
+            <button id="reload-btn">⟳</button>
+            
+            <span id="lock-icon">🔓</span>
+            
+            <input placeholder="https://example.com" type="url" style="flex-grow: 1;" id="urlinp">
+            <button id="gobtn">Go...</button>
+            <button onclick="openSettings()">⋮</button>
+        </div>
+        <iframe id="webview" src="about:blank" style="flex-grow: 1; border:none;" 
+                sandbox="allow-scripts allow-forms allow-same-origin allow-modals"></iframe>
+    </div>
+
+    <script>
+        const webview = document.getElementById('webview');
+        const urlinp = document.getElementById('urlinp');
+        const localHistory = JSON.parse(localStorage.getItem("browser_history")) || [];
+        const DEFAULT_PROXIES = [
+    "https://corsproxy.io/?$url",
+    "https://api.allorigins.win/raw?url=$url",
+    "https://proxy.cors.sh/$url"
+];
+
+// Завантажуємо з пам'яті або ставимо дефолт
+
+        const sett = JSON.parse(localStorage.getItem("browser_settings")) || {
+    homepage: "start.htm",
+    downloads: "downloads/",
+    proxies: JSON.stringify(DEFAULT_PROXIES)
+};
+let userProxies = JSON.parse(sett.proxies) || DEFAULT_PROXIES;
+let currentRealUrl = sett.homepage;
+		const downloadsFolder = sett.downloads;   
+        let currentBlobUrl = null; // Для очищення пам'яті        
+        
+        function getDownloadsFolder(){return downloadsFolder;}
+        function openSettings(){
+			// ...
+		}
+
+        window.addEventListener('contextmenu', (e) => {
+    const isInput = ["TEXTAREA", "INPUT"].includes(e.target.tagName);
+    if (isInput) {
+        e.preventDefault();
+        parent.drawEditContextMenu(e, urlinp.left+e.clientX,urlinp.top+e.clientY, document)
+    }
+})
+        const gobtn = document.getElementById('gobtn');
+        const lockIcon = document.getElementById('lock-icon');
+        const reloadBtn = document.getElementById('reload-btn');
+        
+        
+        // Отримуємо всі ключі об'єкта та з'єднуємо їх для регулярного виразу
+// 1. Отримуємо масив ключів
+const allExts = Object.keys(parent.getFileTypes());
+
+// 2. Фільтруємо виключення (сторінки, які мають відкриватися як URL)
+const webPages = ['html', 'htm', 'php', 'asp']; 
+const filteredExts = allExts.filter(ext => !webPages.includes(ext));
+
+// 3. Збираємо у регулярку
+const supportedExts = filteredExts.join('|');
+const fileRegex = new RegExp(`\\.(${supportedExts})$`, 'i');
+
+// Ваша функція
+
+const isFile = (url)=> url.match(fileRegex);
+
+        
+
+        function openSettings(){
+            new parent.wm(parent._("settings_title"), parent.getIcns().settings, {x: "center",y: "center",class: wbtheme+" no-full",minheight: 700, height: 700, minwidth:500, width: 500, 
+                html: `
+                <input id="homepage" type="text" placeholder="start.htm"><br>
+                    <input id="downloads" type="text" placeholder="downloads/"><br>
+                    <textarea id="proxies" placeholder="${JSON.stringify(DEFAULT_PROXIES)}"></textarea>
+
+            `})
+        }
+        
+window.open = function(url, target, features) {
+    // 1. Перетворюємо відносний URL у абсолютний
+    const absoluteUrl = new URL(url, location.href).href;
+
+    // 2. Надсилаємо повідомлення батьківському вікну браузера (вашому web-toolbar контексту)
+    loadPage(url)
+
+    // Повертаємо null або проксі-об'єкт, щоб уникнути помилок у скриптах сайту
+    return null; 
+};
+
+
+
+        if (window.parent && window.parent._) {
+            gobtn.innerText = window.parent._("go");
+        }
+        
+        // Функція для збереження файлу в Infinity OS
+async function saveToInfinityFS(blob, filename) {
+    try {
+        // 1. Створюємо об'єкт File згідно з вашою вимогою
+        const f = new File([blob], "downloads/" + filename, { type: blob.type });
+
+        // 2. Додаємо до оперативного списку файлів системи
+        console.log("Download: "+ f)
+            parent.getFs().push(f);
+        
+
+        // 3. Записуємо в базу даних (IndexedDB/VFS)
+        
+            await parent.saveFileToDB(f);
+            
+        
+    } catch (err) {
+        console.error("Помилка збереження у VFS:", err);
+    }
+}
+
+
+async function fetchWithFallback(targetUrl) {
+    if (!targetUrl.includes("://")) return 0;
+    const encodedUrl = encodeURIComponent(targetUrl);
+    let lastError;
+
+    // 1. Try all Proxies first
+    for (let proxyTemplate of userProxies) {
+        try {
+            const finalUrl = proxyTemplate.replace("$url", encodedUrl);
+            lockIcon.title = proxyTemplate.replace("$url", "");
+            const res = await fetch(finalUrl);
+            if (res.ok) return res;
+        } catch (err) {
+            lastError = err;
+            console.warn(`Proxy ${proxyTemplate} failed`);
+        }
+    }
+
+    // 2. Proxies failed, try DIRECT as a last resort
+    console.log("All proxies failed. Attempting direct connection...");
+    try {
+        const directRes = await fetch(targetUrl);
+        if (directRes.ok) return directRes;
+    } catch (err) {
+        lastError = err;
+    }
+
+    throw lastError || new Error("Всі методи (включаючи проксі та пряме підключення) недоступні");
+}
+
+// Розширюємо обробку повідомлень від iframe
+window.addEventListener('message', async (event) => {
+    if (event.data.type === 'url_change') {
+        loadPage(event.data.url);
+    }
+    
+    // Новий тип повідомлення для завантаження
+    if (event.data.type === 'download_request') {
+        const response = await fetchWithFallback(event.data.url);
+        const blob = await response.blob();
+        await saveToInfinityFS(blob, event.data.filename);
+    }
+});
+
+
+
+
+        function setSecurityUI(isProxyActive, url) {
+            if (isProxyActive) {
+                lockIcon.innerText = "🔒";
+                lockIcon.style.color = "green";
+                
+            } else {
+                lockIcon.innerText = "🔓";
+                lockIcon.style.color = "red";
+                
+            }
+            
+            if (url && !url.startsWith('blob:')) {
+                urlinp.value = url;
+                currentRealUrl = url;
+            }
+        }
+
+        async function loadPage(url) {
+            if (!url) return;
+            
+            
+                    
+                    
+                    if (isFile(url)) {
+                        const filename = url.split('/').pop() || 'downloaded_file';
+                        
+                        
+                        const response = await fetchWithFallback(url);
+        const blob = await response.blob();
+        if (blob && await parent.confirm(parent._("confirm_download").replace('{name}', filename)) ){
+        await saveToInfinityFS(blob, filename);
+        return;
+                    }}
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+localHistory.push({url: url, time: Date.now()});
+                localStorage.setItem("browser_history", JSON.stringify(localHistory))
+                
+                
+                
+
+// Викликаємо каскадний запит
+const res = await fetchWithFallback(url, controller.signal);
+                
+                if (!res.ok) throw new Error();
+
+                let html = await res.text();
+                clearTimeout(timeoutId);
+
+                const enhancedHtml = `
+    <head>
+
+
+        <base href="${url}">
+        <script>
+(function () {
+Window = window;
+    const realAssign = location.assign.bind(location);
+    const realReplace = location.replace.bind(location);
+
+    location.assign = function(url) {
+        window.parent.postMessage({
+            type: "url_change",
+            url: new URL(url, location.href).href
+        }, "*");
+    };
+
+    location.replace = function(url) {
+        window.parent.postMessage({
+            type: "url_change",
+            url: new URL(url, location.href).href
+        }, "*");
+    };
+
+    Object.defineProperty(location, "href", {
+        set(url) {
+            window.parent.postMessage({
+                type: "url_change",
+                url: new URL(url, location.href).href
+            }, "*");
+        },
+        get() {
+            return location.toString();
+        }
+    });
+})();
+
+document.addEventListener("submit", function(e) {
+    const form = e.target;
+    if (!form.action) return;
+
+    e.preventDefault();
+
+    const url = new URL(form.action, location.href);
+    window.parent.postMessage({
+        type: "url_change",
+        url: url.href
+    }, "*");
+});
+
+window.open = function(url) {
+    window.parent.postMessage({
+        type: "url_change",
+        url: new URL(url, location.href).href
+    }, "*");
+};
+
+window.addEventListener('contextmenu', (e) => {
+const isInput = ["TEXTAREA", "INPUT"].includes(e.target.tagName);
+if (isInput) {
+e.preventDefault();
+parent.parent.drawEditContextMenu(e, ${window.left}+e.clientX,${window.top}+e.clientY, document)
+}
+})
+
+const nativeSetItem = localStorage.setItem.bind(localStorage);
+const nativeGetItem = localStorage.getItem.bind(localStorage);
+
+let permissionState = {}; 
+
+localStorage.setItem = function(key, value) {
+  const host = new URL("${url}").hostname;
+
+  // Системні ключі Infinity OS завжди доступні
+  if (key === "allowedSites") {
+    return nativeSetItem(key, value);
+  }
+
+  const allowed = JSON.parse(nativeGetItem("allowedSites") || "[]");
+
+  // 1. Якщо вже в білому списку — записуємо миттєво
+  if (allowed.includes(host)) {
+    return nativeSetItem(key, value);
+  }
+
+  // 2. Якщо вже заборонено — мовчки ігноруємо (або кидаємо Error)
+  if (permissionState[host] === "denied") {
+    return; 
+  }
+
+  // 3. Якщо запиту ще не було — ініціюємо його
+  if (permissionState[host] !== "pending") {
+    permissionState[host] = "pending";
+
+    // Викликаємо confirm асинхронно, не блокуючи цей потік
+    (async () => {
+      const allow = await parent.parent.confirm(
+        host + " " + parent.parent._("allow_site")
+      );
+
+      if (allow) {
+        permissionState[host] = "granted";
+        const currentAllowed = JSON.parse(nativeGetItem("allowedSites") || "[]");
+        if (!currentAllowed.includes(host)) {
+          currentAllowed.push(host);
+          nativeSetItem("allowedSites", JSON.stringify(currentAllowed));
+        }
+        // Після дозволу наступні виклики setItem спрацюють
+      } else {
+        permissionState[host] = "denied";
+      }
+    })();
+  }
+
+  // Поки чекаємо підтвердження — повертаємо undefined (стандарт setItem)
+  // Дані цього конкретного виклику будуть втрачені, але сайт не "впаде"
+};
+
+
+window.alert = (...a)=> parent.parent.alert(...a);
+window.prompt = (...a)=> parent.parent.prompt(...a);
+window.confirm = (...a)=> parent.parent.confirm(...a);
+window.console = parent.parent.console;
+window.Worker = parent.Worker;
+window.open = parent.window.open;
+
+            window.onclick = function(e) {
+                const target = e.target.closest('a');
+                
+                if (target && target.download) {
+                    const url = target.href
+                    // Додаємо скрипти, стилі та кореневі посилання
+
+
+                    
+                    if (isFile(url)) {
+                        e.preventDefault();
+                        const filename = url.split('/').pop() || 'downloaded_file';
+                        window.parent.postMessage({
+                            type: 'download_request', 
+                            url: url,
+                            filename: filename
+                        }, '*');
+                    } else if (!url.startsWith('javascript:')) {
+                        window.parent.postMessage({type: 'url_change', url: url}, '*');
+                    }
+                }
+            };
+            
+            
+            (function(){
+
+// ===== SCREEN =====
+Object.defineProperty(screen, "width", { get: () => 1366 });
+Object.defineProperty(screen, "height", { get: () => 768 });
+Object.defineProperty(screen, "availWidth", { get: () => 1366 });
+Object.defineProperty(screen, "availHeight", { get: () => 728 });
+Object.defineProperty(screen, "colorDepth", { get: () => 24 });
+
+// ===== NAVIGATOR =====
+const fakeNavigator = {
+  userAgent: "Mozilla/5.0 (InfinityOS; x64) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 InfinityBrowser/1.0 Chrome/124.0.0.0 Safari/537.36",
+  platform: "Win32",
+  language: "en-US",
+  languages: ["en-US", "en"],
+  hardwareConcurrency: 4,
+  deviceMemory: 8,
+};
+
+for (let key in fakeNavigator){
+  try {
+    Object.defineProperty(navigator, key, {
+      get: () => fakeNavigator[key]
+    });
+  } catch(e){}
+}
+
+// ===== PERFORMANCE =====
+const originalNow = performance.now.bind(performance);
+performance.now = function(){
+  return Math.floor(originalNow() / 10) * 10; // округлення
+};
+
+// ===== TIMEZONE (частково) =====
+try {
+  Intl.DateTimeFormat = new Proxy(Intl.DateTimeFormat, {
+    construct(target, args){
+      const obj = new target(...args);
+      return new Proxy(obj, {
+        get(t, prop){
+          if (prop === "resolvedOptions"){
+            return () => ({
+              timeZone: "UTC"
+            });
+          }
+          return t[prop];
+        }
+      });
+    }
+  });
+} catch(e){}
+
+})();
+
+(function () {
+    const notifyUrlChange = () => {
+        window.parent.postMessage({
+            type: "url_change",
+            url: location.href
+        }, "*");
+    };
+
+    const originalPushState = history.pushState;
+    history.pushState = function (...args) {
+        originalPushState.apply(this, args);
+        notifyUrlChange();
+    };
+
+    const originalReplaceState = history.replaceState;
+    history.replaceState = function (...args) {
+        originalReplaceState.apply(this, args);
+        notifyUrlChange();
+    };
+
+    window.addEventListener("popstate", notifyUrlChange);
+})();
+${parent.getNotification()}
+        <\/script>
+    </head>
+    ${html}
+`;
+
+//parent.console.log(enhancedHtml)
+
+
+                const blob = new Blob([enhancedHtml], { type: "text/html" });
+                 if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+ currentBlobUrl = URL.createObjectURL(blob);
+                webview.src = currentBlobUrl;
+                
+                //console.log(webview.innerHTML)
+                
+                // Успішно завантажено через проксі
+                setSecurityUI(true, url);
+
+            } catch (err) {
+                console.warn("Proxy failed, falling back to direct load.", err.message);
+                webview.src = url;
+                
+                
+                // Фолбек: пряме завантаження, знімаємо замок
+                setSecurityUI(false, url);
+            }
+        }
+
+        
+
+        gobtn.onclick = () => loadPage(urlinp.value);
+        reloadBtn.onclick = () => loadPage(currentRealUrl);
+        const goBack = () =>{
+            try{webview.contentWindow.history.back();
+            }catch{
+                loadPage("start.htm")
+            }
+        localHistory.push({url: webview.src, time: Date.now()});
+                localStorage.setItem("browser_history", JSON.stringify(localHistory))
+            
+        }
+        const goFwd = () => {
+            webview.contentWindow.history.forward();
+            localHistory.push({ url: webview.src, time: Date.now() });
+localStorage.setItem("browser_history", JSON.stringify(localHistory))
+        }
+        urlinp.addEventListener("keypress", (e) => { if (e.key === "Enter") gobtn.click(); });
+
+        loadPage(currentRealUrl);
+    </script>
+</body>
+</html>
+
+
