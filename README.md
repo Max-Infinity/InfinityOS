@@ -7,7 +7,7 @@ NPM works via:
 ```
 npmInstall(lib)
 npmUpdate()
-node()
+node(fileath)
 ```
 Modules are stored in system/node_modules/ (note that unlike UNIX-like file systems, the slash at the beginning of paths is not used.)
 
