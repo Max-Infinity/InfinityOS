@@ -79,13 +79,24 @@ position: sticky;
 .toolbar{top:0;}
 .footer{bottom:0;}
 
-div[contenteditable="true"] img,
-div[contenteditable="true"] video {
+div[contenteditable="true"]>* {
+    box-sizing: border-box;
+    /* Тепер padding і border не збільшують ширину */
     max-width: 100% !important;
-    height: auto; /* Щоб не спотворювалися пропорції */
-    display: block; /* Прибирає зайвий відступ знизу */
+    height: auto;
 }
 
+div[contenteditable="true"] table {
+    table-layout: fixed;
+    width: 100% !important; /* Саме width, а не тільки max-width */
+    max-width: 100% !important;
+    word-break: break-word;
+    /* Обов'язково, щоб текст всередині комірок переносився */
+}
+
+table, tr, td, th{
+    border: 1px solid #000;
+}
 
 /* Не міняти шрифт для всього, що всередині контейнера прев'ю */
 /* Застосовуємо системний шрифт до всього, КРІМ:
@@ -122,7 +133,6 @@ display: block;
 
 ul:not(.menu)[style*="list-style-type: none"] > li:has(b, i, s, u) {
 gap: 5px;
-display: unset;
 }
 
 /* Базові стилі елементів керування */

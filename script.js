@@ -12,6 +12,7 @@ const devices = [];
 const screens = [];
 window.systemWorkers = []; // Реєстр для resmon
 
+
 const OriginalWorker = window.Worker;
 window.Worker = function(scriptURL, options) {
     const worker = new OriginalWorker(scriptURL, options);
@@ -59,134 +60,6 @@ window.updateFonts = function(action, fontName) {
 
 // Usage in your OS boot sequence:
 let wm = WinBox;
-
-async function toDataURL(url) {
-  const res = await fetch(url, { mode: "cors" });
-  const blob = await res.blob();
-
-  return await new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(blob);
-  });
-}
-
-// inline computed styles
-function inlineStyles(source, target) {
-  const computed = getComputedStyle(source);
-
-  for (const prop of computed) {
-    target.style.setProperty(prop, computed.getPropertyValue(prop));
-  }
-}
-
-// inline background images
-async function inlineBackgrounds(node) {
-  const style = getComputedStyle(node);
-  const bg = style.backgroundImage;
-
-  if (bg && bg.includes("url(")) {
-    const urlMatch = bg.match(/url\(["']?(.*?)["']?\)/);
-    if (urlMatch && urlMatch[1] && !urlMatch[1].startsWith("data:")) {
-      try {
-        const abs = new URL(urlMatch[1], location.href).href;
-        const dataUrl = await toDataURL(abs);
-        node.style.backgroundImage = `url("${dataUrl}")`;
-      } catch (e) {
-        console.warn("BG inline failed:", urlMatch[1]);
-      }
-    }
-  }
-}
-
-async function processNode(source, target) {
-  if (!source || !target) return;
-
-  inlineStyles(source, target);
-  await inlineBackgrounds(source);
-
-  // images
-  if (target.tagName === "IMG") {
-    const src = source.getAttribute("src");
-    if (src && !src.startsWith("data:")) {
-      try {
-        const abs = new URL(src, location.href).href;
-        target.src = await toDataURL(abs);
-      } catch (e) {
-        console.warn("IMG inline failed:", src);
-      }
-    }
-  }
-
-  const sourceChildren = source.children;
-  const targetChildren = target.children;
-
-  for (let i = 0; i < sourceChildren.length; i++) {
-    await processNode(sourceChildren[i], targetChildren[i]);
-  }
-}
-
-async function capture(element) {
-  const width = Math.ceil(element.offsetWidth);
-  const height = Math.ceil(element.offsetHeight);
-
-  const clone = element.cloneNode(true);
-  await processNode(element, clone);
-
-  const serialized = new XMLSerializer().serializeToString(clone);
-
-  const svg = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-    <foreignObject width="100%" height="100%">
-      <div xmlns="http://www.w3.org/1999/xhtml">
-        ${serialized}
-      </div>
-    </foreignObject>
-  </svg>`;
-
-  const blob = new Blob([svg], {
-    type: "image/svg+xml;charset=utf-8"
-  });
-
-  const url = URL.createObjectURL(blob);
-
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-
-  return new Promise((resolve, reject) => {
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-
-      URL.revokeObjectURL(url);
-
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          return reject(new Error("Canvas toBlob failed"));
-        }
-
-        const file = new File(
-          [blob],
-          `screenshot-${Date.now()}.png`,
-          { type: "image/png" }
-        );
-
-        resolve(file);
-      }, "image/png");
-    };
-
-    img.onerror = (e) => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Image load/render failed"));
-    };
-
-    img.src = url;
-  });
-}
 
 
 // --- ЛОГІКА КЕРУВАННЯ ПРОЦЕСАМИ ---
@@ -248,7 +121,7 @@ async function buildDevProps() {
     memory: navigator.deviceMemory ? navigator.deviceMemory + " GB" : "Unknown",
     os: {
       name: "Infinity OS",
-      version: "16052026"
+      version: "23052026"
     },
     deviceIcon: navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches ? "assets/laptop.svg" : "assets/pc.svg"
   };
@@ -314,7 +187,7 @@ window.icns = {
     toolpointer: "icons/tool-pointer.svg",
     clock: "icons/clock.svg",
     calc: "icons/calc.svg",
-    settings: "icons/preferences-system.svg",
+    settings: "icons/settings.svg",
     term: "icons/terminal.svg",
     web: "icons/web.svg",
     tasks: "icons/tasks.svg",
@@ -352,15 +225,15 @@ window.icns = {
 let vol = 1;
 
 window.sounds = {
-  error: new Audio("sounds/error.mp3"),
-  startup: new Audio("sounds/startup.mp3"),
-  info: new Audio("sounds/info.mp3"),
-  question: new Audio("sounds/question.mp3"),
-  warn: new Audio("sounds/warn.mp3"),
-  driveIn: new Audio("sounds/driveIn.mp3"),
-  driveOut: new Audio("sounds/driveOut.mp3"),
-  notify: new Audio("sounds/message-new-instant.mp3"),
-  logout: new Audio("sounds/service-logout.mp3"),
+  error: new Audio("sounds/dialog-error.mp3"),
+  startup: new Audio(""),
+  info: new Audio(""),
+  question: new Audio("sounds/dialog-confirm.mp3"),
+  warn: new Audio(""),
+  driveIn: new Audio("sounds/device-in.mp3"),
+  driveOut: new Audio("sounds/device-out.mp3"),
+  notify: new Audio(""),
+  logout: new Audio(""),
   
   async play(aud) { // Додано дефолтне значення гучності
  let audio;
@@ -490,7 +363,7 @@ sounds.play("driveIn")
     }else{
         //...
     }
-    new Notification(isConnecting ? _("device_connected"):_("device_disconnected"), {body: dev.type || "" })
+    new Notification(isConnecting ? _("device_connected"):_("device_disconnected"), {body: dev.type || "" , silent: true})
 };
 
 window.addEventListener("gamepadconnected", (e) => updateDevices(e, true));
@@ -885,6 +758,7 @@ function getNotification(){return notificationAPI;}
 function getCurrLang(){return currentLang;}
 function getCurrDLang(){return dateLang;}
 function getDevProps(){return devProps;}
+function getDB(){return DB_NAME;}
 function getFs(){return fs;}
 function getIcns(){return icns;}
 function getFonts(){return fonts;}
@@ -1158,7 +1032,9 @@ function openMenu(event) {
         const ico = document.createElement("img");
         ico.style.width = "24px"; // 24-32px оптимально для меню
         ico.style.marginRight = "10px";
+
         ico.src = app.icon;
+
         
         const title = document.createElement("p");
         title.style.margin = "0";
@@ -1168,26 +1044,11 @@ function openMenu(event) {
         // Умова: якщо шлях НЕ починається з http ТА НЕ починається з /
         
             
-        if (app.url.startsWith("apps/")&& !folderExists("apps")) {
+        
             btn.onclick = () => {
-            new wm(_(app.name), {x: "center", y: "center",
-                class: wbtheme+ " no-full",
-                url: app.url,
-                icon: app.icon,
-                minwidth: app.miw,
-                minheight: app.mih,
-                width: app.w,
-                height: app.h,
-                maxwidth: app.maw,
-                maxheight: app.mah
-            })
+            openApp(app)
             }
-        }else{
-            btn.onclick = () => {
-    Openf(null, null, getMimeType(app.url), app.url, startupDisk);
-    document.querySelector("#sysmenu").style.display = "none"; // Закриваємо після запуску
-};
-        }
+
         
         btn.appendChild(ico);
         btn.appendChild(title);
@@ -1200,6 +1061,119 @@ function openMenu(event) {
     
 }
 
+function handleInspectScreen(targetSelector) {
+    // Визначаємо корінь сканування (конкретне вікно або весь екран)
+    const rootElement = targetSelector 
+        ? document.querySelector(targetSelector) 
+        : (document.querySelector('.workspace') || document.body);
+
+    if (!rootElement) {
+        return JSON.stringify({ error: `Selector '${targetSelector}' not found.` });
+    }
+
+    const screenDump = [];
+
+    // Рекурсивна функція обходу дерева елементів
+    function traverseDOM(element) {
+        // Пропускаємо системні скрипти, стилі та сам фрейм чату ШІ, щоб він не дивився сам на себе
+        if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(element.tagName)) return;
+
+        const style = window.getComputedStyle(element);
+        
+        // Якщо елемент повністю прихований, ШІ його не бачить
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return;
+        }
+
+        // Отримуємо чистий текст без тексту дочірніх елементів
+        let directText = "";
+        for (let node of element.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                directText += node.nodeValue.trim();
+            }
+        }
+
+        // Перевіряємо, чи елемент несе корисне візуальне навантаження
+        const hasClass = element.className && typeof element.className === 'string' && element.className.trim() !== "";
+        const hasId = element.id !== "";
+        const isInteractive = ['BUTTON', 'INPUT', 'TEXTAREA', 'A', 'H1', 'H2', 'H3'].includes(element.tagName);
+
+        if (directText || isInteractive || hasId || hasClass) {
+            screenDump.push({
+                tagName: element.tagName.toLowerCase(),
+                id: element.id || undefined,
+                class: element.className || undefined,
+                styleDisplay: style.display,
+                innerText: directText || undefined,
+                // Для полів вводу (наприклад, у твоїй Agenda чи сторі) повертаємо їхній поточний вміст
+                value: (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') ? element.value : undefined
+            });
+        }
+
+        // Йдемо вглиб по дереву
+        for (let i = 0; i < element.children.length; i++) {
+            traverseDOM(element.children[i]);
+        }
+    }
+
+    // Запускаємо сканування
+    traverseDOM(rootElement);
+
+   
+    
+       return JSON.stringify(screenDump);
+}
+
+
+async function openApp(targ) {
+    const beforeDB = DB_NAME;
+    
+    // Оголошуємо через let локально, щоб не засмічувати window.app
+    let app = typeof targ == "string" ? getApps().find(a => a.name == targ) : targ;
+
+    // Якщо додатка немає — логуємо і ПЕРЕРИВАЄМО функцію через return
+    if (!app) {
+        console.error("App not found:", (typeof targ == "string" ? targ : targ.name));
+        return; 
+    }
+
+    if (app.url.startsWith("apps/") && !folderExists("apps")) {
+        // Категорія RAM-додатків: запускаються миттєво, диск не чіпаємо взагалі!
+        new wm(_(app.name), {
+            x: "center", y: "center",
+            class: wbtheme + " no-full",
+            url: app.url,
+            icon: app.icon,
+            minwidth: app.miw, minheight: app.mih,
+            width: app.w, height: app.h,
+            maxwidth: app.maw, maxheight: app.mah
+        });
+    } else {
+        try {
+        // Категорія дискових файлів: ось тут монтування дійсно необхідне
+        if (DB_NAME != startupDisk) {
+            DB_NAME = startupDisk;
+            idbWrapper.db = null;
+            await idbWrapper.openDB();
+            await loadFsFromDB();
+            console.log(beforeDB + " -> " + DB_NAME);
+        }
+
+        // Чекаємо повного зчитування файлу з диска
+        await Openf(null, null, getMimeType(app.url), app.url, startupDisk);
+}finally{
+        // Повертаємо дата-драйв на місце користувачу
+        if (DB_NAME == startupDisk && beforeDB != startupDisk) {
+            console.log(beforeDB + " <- " + DB_NAME);
+            DB_NAME = beforeDB;
+            idbWrapper.db = null;
+            await idbWrapper.openDB();
+            await loadFsFromDB();
+            
+        }
+    }
+}
+}
 
 function getApps(){
     return apps;
@@ -1252,11 +1226,12 @@ class IDBWrapper {
 
             request.onsuccess = (event) => {
                 //console.log("Mounted:"+event.target.result.name + " "+ DB_NAME+ ":"+event.target.result.name)
-                if (LAST_DB != event.target.result.name){
+                if (LAST_DB != event.target.result.name || DB_NAME == ""){
                     sounds.play("driveIn");
                 }
                 LAST_DB = event.target.result.name;
                 this.db = event.target.result;
+                console.log("Mount: " + event.target.result.name)
                 resolve(this.db);
                 dbInstances[DB_NAME] = event.target.result;
             };
@@ -1327,15 +1302,44 @@ class IDBWrapper {
     }
 }
 
+
+
 // Глобальний екземпляр обгортки IDB
 const idbWrapper = new IDBWrapper();
+
+
 
 
 // Глобальний масив файлів. Починаємо з порожнього масиву.
 let fs = [];
 let dbInstances = {}
 
+/**
+ * Перевіряє, чи закрита база даних IndexedDB за її ім'ям
+ * @param {string} dbName - Назва бази даних (наприклад, твій DB_NAME)
+ * @returns {boolean} true, якщо база закрита або не існує
+ */
+function isDbClosed(dbName) {
+    const db = dbInstances[dbName];
+    
+    // Якщо її взагалі немає в реєстрі — вона точно закрита/не відкривалася
+    if (!db) return true; 
 
+    try {
+        // Пробуємо створити порожню транзакцію над твоїм схожищем
+        // Якщо база закрита, цей рядок викличе виключення (Exception)
+        db.transaction([STORE_NAME], 'readonly');
+        
+        return false; // Транзакція успішна -> база ВІДКРИТА
+    } catch (error) {
+        // Якщо зловили InvalidStateError — базу було закрито через db.close()
+        if (error.name === 'InvalidStateError' || error.message.includes('closed')) {
+            return true; 
+        }
+        // Будь-яка інша помилка (наприклад, сховища не існує) означає, що база жива, але є проблема з конфігом
+        return false; 
+    }
+}
 
 
 // --- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ FS (ЗАЛИШЕНІ) ---
@@ -1529,57 +1533,47 @@ function applyTranslationsToDOM() {
 // ----------------------------------------------------------------
 
 
-/**
- * Асинхронно завантажує файли перекладів.
- * @param {string | null} lang Код мови (наприклад, 'uk', 'en').
- * @param {string | null} dlang Код мови для дати.
- */
 function loadLanguage(lang = null, dlang = null) {
   try {
-    // ✅ Читаємо окремо
-    if (!lang) {
-      lang = localStorage.getItem("locale");
-    }
+    // 1. Зчитуємо дані
+    if (!lang) lang = localStorage.getItem("locale");
+    if (!dlang) dlang = localStorage.getItem("dlocale");
 
-    if (!dlang) {
-      dlang = localStorage.getItem("dlocale");
-    }
-
-    // ✅ fallback якщо null
+    // 2. Первинний fallback, якщо в сховищі або аргументах порожньо
     if (!lang) lang = "en";
     if (!dlang) dlang = "en-US";
 
-    const out = langs[lang];
-
-    // ✅ перевірка чи мова існує
-    if (!out) {
-      throw new Error("Language not found: " + lang);
+    // 3. Перевіряємо наявність мови в об'єкті
+    if (!langs[lang]) {
+      throw new Error(`Language "${lang}" not found in dictionary.`);
     }
 
-    currentStrings = out;
+    // 4. Якщо мова є — застосовуємо її
+    currentStrings = langs[lang];
     currentLang = lang;
     dateLang = dlang;
 
-    applyTranslationsToDOM();
-    console.log(`Language set to: ${lang}`);
-
   } catch (error) {
-    console.error("Error loading language:", error);
+    console.error("Error loading language, rolling back to English:", error);
 
-    // ✅ fallback тільки якщо ще не en
-    if (lang !== "en") {
-      return loadLanguage("en", "en-US");
-    }
-
-    currentStrings = {};
+    // Аварійний fallback: якщо впала навіть англійська, захищаємо від крашу
+    const fallbackLang = (lang !== "en" && langs["en"]) ? "en" : lang;
+    
+    currentStrings = langs[fallbackLang] || {};
+    currentLang = fallbackLang;
+    dateLang = (lang !== "en") ? "en-US" : dlang;
   }
 
-  // ✅ зберігаємо вже гарантовано валідні значення
+  // 5. Гарантований DOM-апдейт та ОДНОРАЗОВЕ збереження чистих даних
+  applyTranslationsToDOM();
+  
   localStorage.setItem("locale", currentLang);
   localStorage.setItem("dlocale", dateLang);
 
+  console.log(`Language set to: ${currentLang}`);
   console.log("SAVE:" + currentLang + " " + dateLang);
 }
+
 
 /**
  * Асинхронно завантажує фон з FS та ховає Splash Screen.
@@ -1774,6 +1768,7 @@ const oobe_steps = [
                 <option value="ua|UK-UA">Українська</option>
                 <option value="fr|FR-FR">Français</option>
                 <option value="ru|RU-RU">Русский</option>
+<option value="pl|pl-PL">Polski</option>
             </select>`,
         onLoad: () => {
             const select = document.getElementById("languageSelect");
@@ -1837,7 +1832,21 @@ oobe_next()
 
 
 async function setupFonts() {
-  fonts = JSON.parse(localStorage.getItem("fonts")) || {installed: [], active: "sans-serif"};
+  fonts = JSON.parse(localStorage.getItem("fonts")) || {installed: [
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "ui-serif",
+  "ui-sans-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "math",
+  "emoji",
+  "fangsong"
+], active: "sans-serif"};
   const active = fonts.active;
   
   // Find the file in your FS
@@ -1885,7 +1894,7 @@ function getMaxLS(pb, max = 5) {
             
             // 1. Рахуємо поточний об'єм усіх даних у localStorage (в KB)
             let currentSize = Math.round(JSON.stringify(localStorage).length / 1024);
-            notify.innerText = currentSize;
+            console.log(currentSize);
             // 2. Рахуємо відсоток заповнення (від 0 до 1)
             let progressRatio = Math.min(currentSize / APPROX_MAX_LS, 0.99); 
             
@@ -1897,8 +1906,8 @@ function getMaxLS(pb, max = 5) {
             // Коли ліміт дійсно досягнуто, виставляємо прогрес-бар рівно на значення max
             if (pb) pb.value = max;
             
-            let finalSize = Math.round(JSON.stringify(localStorage).length / 1024);
-            console.log("LIMIT REACHED: (" + i + ") " + finalSize + "K");
+            let finalSize = (JSON.stringify(localStorage).length).toFixed(2);
+            console.log("LIMIT REACHED: (" + i + ") " + finalSize);
             console.log(e);
             
             // Очищаємо за собою сміття перед виходом
@@ -2365,7 +2374,7 @@ try{
                     white-space: pre-wrap; 
                     aspect-ratio: 210 / 297; 
                     box-sizing: border-box; 
-                    border: 1px solid #ddd; 
+                    
                     box-shadow: 0 0 15px rgba(0,0,0,0.2);
                     display: flow-root;">${initialHtml}</div>
     </div>
@@ -2495,21 +2504,27 @@ if (content.includes("new Notification(") ) {
     const fileName = exfile.name.split("/").pop(); // Отримуємо назву файлу
     
     newContent = `
-
 <div style="display: flex; flex-direction: column; height: 100%; width: 100%; background: #222; overflow: hidden;">
     
     <div style="display: flex; height: 70px; border-bottom: 2px solid #333;">
         
-        <div id="time-block-${uniqueFileId}" style="width: 130px; border-right: 1px solid #444; background: #0a0a0a; color: #00ff00; font-family: monospace; font-weight: bold; display: flex; align-items: center; justify-content: center; position: relative;">
-            
+        <div id="time-block-${uniqueFileId}" style="display: flex; flex-direction: column; width: 130px; border-right: 1px solid #444; background: #0a0a0a; color: #00ff00; font-family: monospace; font-weight: bold; display: flex; align-items: center; justify-content: center; position: relative;">
+
+      <div style="display: flex; flex-direction: column; gap: 2px; width: 100%;">
+            <meter id="meter-l-${uniqueFileId}" min="0" max="100" value="0" style="flex-grow: 1;  display: block; accent-color: lime;"></meter>
+            <meter id="meter-r-${uniqueFileId}" min="0" max="100" value="0" style="flex-grow: 1; display: block; accent-color: lime;"></meter>
+</div>
+<div style="display: flex; flex-direction: row;">
             <sub id="play-status-${uniqueFileId}"  style="color:#aa0000;">\u25FC</sub>
             
             <b id="time-text-${uniqueFileId}" >0:00</b>
+      </div>
             
 
         </div>
 
         <div style="flex-grow: 1;  background: black; overflow: hidden; display: flex; align-items: center;">
+      
             <marquee scrollamount="1" style="font-size: 18px; font-weight: bold; color: white; display: block;  width: 100%;font-family: monospace;">${fileName}</marquee>
         </div>
     </div>
@@ -2522,16 +2537,13 @@ if (content.includes("new Notification(") ) {
         
         <button id="ctrl-prev-${uniqueFileId}" title="Prev" >|⟨</button>
         <button id="ctrl-pause-${uniqueFileId}" title="Pause" >PAUSE</button>
-      <button style="flex:1;" id="ctrl-play-${uniqueFileId}" title="Play">PLAY</button>
+        <button style="flex:1;" id="ctrl-play-${uniqueFileId}" title="Play">PLAY</button>
         <button id="ctrl-stop-${uniqueFileId}" title="Stop" >STOP</button>
         <button id="ctrl-next-${uniqueFileId}" title="Next" >⟩|</button>
     </div>
 
-    <audio id="${uniqueFileId}" src="${content}"></audio>
+    <audio id="${uniqueFileId}" src="${content}" autoplay></audio>
 
-    <style>
-        .blinking { animation: blinker 1s linear infinite; }
-    </style>
 </div>`;
 
 
@@ -2552,8 +2564,10 @@ if (content.includes("new Notification(") ) {
     // 3. JavaScript Logic: Function to update the entire custom UI
 const updateUI = () => {
         const audioPlayer = document.getElementById(uniqueFileId);
+
         if (!audioPlayer) return;
-        
+        audioPlayer.volume  =vol;
+
         // --- NEW CUSTOM UI ELEMENTS ---
         const timeText = document.getElementById(`time-text-${uniqueFileId}`);
         const seekRange = document.getElementById(`seek-${uniqueFileId}`);
@@ -2607,8 +2621,109 @@ const updateUI = () => {
         const player = document.getElementById(uniqueFileId);
         if (!player) return;
 
+
         // Standard event (like your richText block uses callback)
         player.ontimeupdate = updateUI;
+        
+            
+            // --- ЛОГІКА VU-МЕТРІВ НА <meter> ---
+        const meterL = document.getElementById(`meter-l-${uniqueFileId}`);
+        const meterR = document.getElementById(`meter-r-${uniqueFileId}`);
+        
+if (meterL && meterR) {
+    if (!player._audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        player._audioCtx = new AudioContext();
+        player._source = player._audioCtx.createMediaElementSource(player);
+        
+        player._splitter = player._audioCtx.createChannelSplitter(2);
+        player._analyserL = player._audioCtx.createAnalyser();
+        player._analyserR = player._audioCtx.createAnalyser();
+        
+player._analyserL.fftSize = 32;
+player._analyserR.fftSize = 32;
+
+// Стандартні значення: min = -100, max = -30. 
+// Звужуючи цей діапазон, ми робимо метри супер-чутливими до тихих звуків:
+player._analyserL.minDecibels = -70; // Поріг повної тиші (чим ближче до 0, тим менше чутливість)
+player._analyserL.maxDecibels = -10; // Поріг максимального стрибка
+player._analyserR.minDecibels = -70;
+player._analyserR.maxDecibels = -10;
+
+        player._source.connect(player._splitter);
+        player._splitter.connect(player._analyserL, 0); // Лівий
+        player._splitter.connect(player._analyserR, 1); // Правий
+        
+        player._source.connect(player._audioCtx.destination);
+    }
+
+    // Переходимо на справжні частотні дані (FrequencyData) - вони набагато ефектніші для VU-метрів
+    const bufferLength = player._analyserL.frequencyBinCount;
+    const dataArrayL = new Uint8Array(bufferLength);
+    const dataArrayR = new Uint8Array(bufferLength);
+
+    let animationFrameId;
+
+    const updateMeters = () => {
+        // Перевіряємо, чи плеєр і самі метри ще існують в DOM
+        const currentPlayer = document.getElementById(uniqueFileId);
+        const mL = document.getElementById(`meter-l-${uniqueFileId}`);
+        const mR = document.getElementById(`meter-r-${uniqueFileId}`);
+        
+        if (!currentPlayer || !mL || !mR || currentPlayer.paused) {
+            // Якщо на паузі або вікно закрили — скидаємо в 0 і зупиняємо цикл
+            if (mL) mL.value = 0;
+            if (mR) mR.value = 0;
+            if (!currentPlayer || !mL) {
+                cancelAnimationFrame(animationFrameId);
+                return;
+            }
+        }
+
+        animationFrameId = requestAnimationFrame(updateMeters);
+
+        // Беремо частоти (значення від 0 до 255)
+        player._analyserL.getByteFrequencyData(dataArrayL);
+        player._analyserR.getByteFrequencyData(dataArrayR);
+
+        const getVolumeFromFrequencies = (dataArray) => {
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            // Повертаємо середнє значення у відсотках (0-100)
+            return (sum / dataArray.length) / 255 * 100;
+        };
+
+        const volL = getVolumeFromFrequencies(dataArrayL);
+        const volR = getVolumeFromFrequencies(dataArrayR);
+
+        // Метри будуть дуже чутливими і "живими"
+        const sensitivity = 0.5; 
+        mL.value = Math.min(volL * sensitivity, 100);
+        mR.value = Math.min(volR * sensitivity, 100);
+    };
+
+    // Запускаємо тільки тоді, коли аудіо реально грає, щоб економити CPU
+    player.onplay = () => {
+        // Браузери блокують AudioContext до першого кліку. Розблоковуємо при старті:
+        if (player._audioCtx.state === 'suspended') {
+            player._audioCtx.resume();
+        }
+        updateMeters();
+    };
+    
+    player.onpause = () => {
+        meterL.value = 0;
+        meterR.value = 0;
+    };
+
+    // Якщо трек вже запущено (через autoplay), стартуємо метри відразу
+    if (!player.paused) {
+        updateMeters();
+    }
+}
+
 
         // Seekbar logic (Clicking and dragging on the range input)
         const seekInput = document.getElementById(`seek-${uniqueFileId}`);
@@ -3158,6 +3273,10 @@ async function performRename(fileIndex, newName, renderFileList, updateQuotaInfo
 async function createIDB() {
     const dbName = await prompt(_("prompt_new_idb_name")); // використовуємо глобальну змінну
     if (!dbName) return;
+    if (dbName.includes("://")){
+
+    }else{
+
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(dbName, 1);
 
@@ -3181,6 +3300,7 @@ async function createIDB() {
             resolve(db); // дескриптор IDB для подальшого використання
         };
     });
+  }
 }
 
 
@@ -3189,11 +3309,12 @@ async function unmountDrive(driveName){
       dbInstances[driveName].close();
     DB_NAME = "";
         delete dbInstances[driveName];
-        console.log("UnMounted:"+driveName)
+        console.log("UnMounted:"+driveName);
+        LAST_DB = "";
         sounds.play("driveOut");
 }
 
-async function  mountDrive(driveName){
+async function mountDrive(driveName){
     DB_NAME = driveName;
     console.log("Attempting to mount:"+driveName)
     await idbWrapper.openDB();
@@ -3304,7 +3425,7 @@ async function updateDiskQuotaUI (disk, meter, text){
         if (disk.type === "localStorage") {
             // приблизна оцінка: 2 байти на символ
             const usedBytes = JSON.stringify(localStorage).length * 2;
-            const totalBytes = 5 * 1024 * 1024; // стандартна квота ~5MB
+            const totalBytes = maxLS;
 if (meter && text){
             meter.max = totalBytes;
             meter.value = usedBytes;
@@ -3367,14 +3488,10 @@ async function getDisks() {
     return disks;
 };
 
-
-
-
-
-addIcon(("file_explorer_title"), icns.files, function(){ // ВИКОРИСТАННЯ КЛЮЧА
+addIcon("files", icns.files, function(){ // ВИКОРИСТАННЯ КЛЮЧА
     const uniqueId = "file-explorer-" + Date.now(); 
 
-    new wm(_("file_explorer_title"), { // ВИКОРИСТАННЯ _()
+    new wm(_("files"), { // ВИКОРИСТАННЯ _()
     x: "center",y: "center",
         id: uniqueId, 
         icon: icns.files,
@@ -4035,12 +4152,15 @@ mountBtn.onclick = async (e) => {
 mountDrive(driveName)
 }
 
-unmountBtn.onclick = (e) => {
+unmountBtn.onclick = async (e) => {
     e.stopPropagation();
     const li = e.target.closest("li");
     
     const driveName = li.getAttribute("data-file");
-    unmountDrive(driveName);
+
+    await unmountDrive(driveName);
+    currentDisk = "";
+    renderFileList();
     
 }
 
@@ -4704,13 +4824,16 @@ main {
     padding: 15px;
 }
 
-body {
-  container-type: inline-size;
-  container-name: main-canvas;
+#sett_app {
+    container-type: inline-size;
+    padding:0;
+    margin:0;
 }
 
+
+
 /* ===== MOBILE ===== */
-@container main-canvas (width < 700px) {
+@container (width < 700px) {
 
      main.sidebar-collapsed {
         grid-template-columns: 40px 1fr;
@@ -4732,22 +4855,8 @@ body {
 
 /* ===== ТВОЇ СТИЛІ (НЕ ЧІПАЛИСЬ) ===== */
 
-h2 {
-    font-weight: bold;
-    margin-bottom: 8px;
-    padding-bottom: 2px;
-    color: black;
-    margin-top: 15px;
-}
 
-button {
-    padding: 4px 8px;
-    border: 1px solid #aaa;
-    background-color: #ddd;
-    cursor: pointer;
-    font-size: 12px;
-    color: black;
-}
+
 
 .setting-row {
     display: flex;
@@ -4761,14 +4870,6 @@ button {
     font-size: 14px;
 }
 
-select {
-    padding: 4px 8px;
-    border: 1px solid #aaa;
-    background-color: #ddd;
-    cursor: pointer;
-    font-size: 12px;
-    color: black;
-}
 
 @keyframes fadeIn {
   0% {
@@ -4801,10 +4902,7 @@ select {
     border-radius: 5px;
 }
 
-#icns_cont{
-    border-top-left-radius: 5px;
-    border-bottom-left-radius: 5px;
-}
+
 .crt{
     position: relative; /* важливо для ::before/::after */
     animation: textShadow 1.6s infinite;
@@ -4971,12 +5069,10 @@ select {
   }
 }
 
-li{
-
-}
 </style>
 </head>
 <body>
+<div id="sett_app">
 <main class="sidebar-collapsed">
 
 <!-- SIDEBAR -->
@@ -4992,7 +5088,7 @@ li{
 
     <div class="sidebar-separator"></div>
 
-    <a class="sidebar-tab" data-page="icons" data-i18n="icons"></a>
+    <a class="sidebar-tab" data-page="files" data-i18n="files"></a>
     <a class="sidebar-tab" data-page="themes" data-i18n="themes"></a>
     <a class="sidebar-tab" data-page="taskbar" data-i18n="taskbar"></a>
 </div>
@@ -5012,53 +5108,25 @@ li{
                 <option value="ua|UK-UA">Українська</option>
                 <option value="fr|FR-FR">Français</option>
                 <option value="ru|RU-RU">Русский</option>
+                
+                <option value="pl|pl-PL">Polski</option>
             </select>
 
         </div>
 
       <div class="setting-row">
-            <span class="setting-label" data-i18n="date_time_format"></span>
 
-<div class="format-group">
-    <label>
-      <input type="checkbox" data-unit="year" value="numeric"> Рік
-    </label>
-    <label>
-      <input type="checkbox" data-unit="month" value="2-digit"> Місяць
-    </label>
-    <label>
-      <input type="checkbox" data-unit="day" value="2-digit"> День
-    </label>
-  </div>
-
-  <div class="format-group">
-    <label>
-      <input type="checkbox" data-unit="hour" value="2-digit"> Години
-    </label>
-    <label>
-      <input type="checkbox" data-unit="minute" value="2-digit"> Хвилини
-    </label>
-    <label>
-      <input type="checkbox" data-unit="second" value="2-digit"> Секунди
-    </label>
-  </div>
-
-  <div class="format-group">
-    <label>
-      <input type="checkbox" data-unit="hour12" value="false"> 24-годинний формат
-    </label>
   </div>
       
-        </div>
     </div>
     
     <div class="page" data-page="drivers" hidden>
 
         <h2 data-i18n="drivers"></h2>
-        <ul id='navigator_list' style="list-style: none;" class="setting-row"></ul>
+        <ul id='navigator_list' style="list-style-type: none;" ></ul>
 
         <h2 data-i18n="devices"></h2>
-        <ul id='dev_list' style="list-style: none;" class="setting-row"></ul>
+        <ul id='dev_list' style="list-style-type: none;"></ul>
 
     </div>
 
@@ -5117,8 +5185,8 @@ li{
 
 
     <!-- ICONS -->
-    <div class="page" data-page="icons" hidden>
-        <h2 data-i18n="icons"></h2>
+    <div class="page" data-page="files" hidden>
+        <h2 data-i18n="files"></h2>
         <div id="icns_cont" style="width:100%;background-color: gray;"></div>
     </div>
 
@@ -5169,6 +5237,7 @@ li{
 
 </div>
 </main>
+</div>
 </body>
 </html>
      `
@@ -5415,63 +5484,6 @@ langSelect.onchange = () => {
     }, 50);
 };
 
-const icnsCont = document.getElementById("icns_cont");
-
-function renderIcons() {
-    icnsCont.innerHTML = "";
-
-
-    for (const key in icns) {
-
-        const img = document.createElement("img");
-        img.src =  icns[key];
-        img.textContent = key;
-        img.style.width = "32px";
-        img.style.height = "32px";
-
-        
-
-        
-
-        img.onclick = () => changeIcon(key, img);
-
-        icnsCont.appendChild(img);
-    }
-}
-
-function changeIcon(name, imgEl) {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-
-    input.onchange = () => {
-        const file = input.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = () => {
-            const dataUrl = reader.result;
-
-            imgEl.src = dataUrl;
-            saveCustomIcon(name, dataUrl);
-        };
-        reader.readAsDataURL(file);
-    };
-
-    input.click();
-}
-
-function saveCustomIcon(name, dataUrl) {
-    let custom = {};
-
-    try {
-        custom = JSON.parse(localStorage.getItem("custom_icons")) || {};
-    } catch {}
-
-    custom[name] = dataUrl;
-    localStorage.setItem("custom_icons", JSON.stringify(custom));
-}
-
 
 const kbrdImg = document.getElementById('kbrd');
 const screenTypeSelect = document.getElementById("screenTypeSelect");
@@ -5490,7 +5502,6 @@ async function showPage(name) {
 
     updateTexts(); // на випадок якщо вкладка нова
     if (name == "drivers"){
-        const list = document.createElement("ul");
 
 const container = document.getElementById("navigator_list");
 container.innerHTML = "";
@@ -5501,42 +5512,39 @@ const availableDrivers = Object.keys(devProps)
 availableDrivers.forEach(name => {
   const li = document.createElement("li");
   li.innerText = name;
-  list.appendChild(li);
+  container.appendChild(li);
 });
 
-container.appendChild(list);
 
-const list1 = document.createElement("ul");
+
+
 
 const container1 = document.getElementById("dev_list");
 container1.innerHTML = "";
 
 devices.forEach(dev => {
   const li = document.createElement("li");
-  if (dev.type == "screen"){
-li.innerHTML = `<b>${_("display")}</b>${dev.width}*${dev.height}`;
-}else{
-  li.innerHTML = `<b>${dev.id}</b>`;
-}
-  list1.appendChild(li);
+  if (dev.type == "screen") {
+    li.innerHTML = `<b>${_("display")}</b>${dev.width}*${dev.height}`;
+  } else {
+li.innerHTML = `<b>${dev.id}</b>`;
+  }
+  container1.appendChild(li);
 });
 
 const d = await getDisks();
 d.forEach(dsk => {
-if (dsk.type != "localStorage"){
-  const li = document.createElement("li");
-  li.innerHTML = `<b>${dsk.name}</b>${dsk.type}`;
-  list1.appendChild(li);
-}
+  if (dsk.type != "localStorage") {
+    const li = document.createElement("li");
+    // Замість <b> використовуємо <span style="font-weight:bold;">
+    li.innerHTML = `<b>${dsk.name}</b>${dsk.type}`;
+    container1.appendChild(li);
+  }
 });
 
-container1.appendChild(list1);
-
 
     }
-    if (name == "icons"){
-        renderIcons();
-    }
+
     if (name == "keyboard"){
         
     setTimeout(() => {
@@ -5993,27 +6001,38 @@ class EventEmitter {
 }
 
 async function gitClone(url, branch = "main") {
-  // 1. Формуємо правильний URL для завантаження
-  const downloadUrl = url.includes("zipball") ? url : `${url}/zipball/${branch}`;
+  // 1. Формуємо URL для завантаження
+  let downloadUrl = url.includes("zipball") ? url : `${url}/zipball/${branch}`;
   const repoName = url.split("/").pop();
 
   try {
-    console.log(`Cloning into ${repoName}...`);
-    const response = await fetch(downloadUrl);
+    console.log(`Cloning into ${repoName} (branch: ${branch})...`);
+    let response = await fetch(downloadUrl);
     
+    // 2. Якщо отримали 404 і ми намагалися завантажити "main", пробуємо "master"
+    if (!response.ok && branch === "main") {
+      console.warn(`Branch "${branch}" not found (404). Retrying with "master"...`);
+      return await gitClone(url, "master"); // Рекурсивний виклик з іншою гілкою
+    }
+
+    // Якщо помилка якась інша або "master" теж видав 404 — викидаємо виключення
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-    // 2. Отримуємо Blob та відправляємо на розпаковку одним ланцюжком
+    // 3. Отримуємо Blob та відправляємо на розпаковку
     const blob = await response.blob();
     const repoFile = new File([blob], repoName);
 
-    unzipFile(repoFile, repoName);
+    await unzipFile(repoFile, repoName);
+    return true; 
     
   } catch (error) {
     console.error('Clone failed:', error);
+    // Прокидаємо помилку назовні для ШІ-клієнта
+    throw error; 
   }
 }
-    
+
+
 
 const installedpkg = new Set();
 
@@ -6324,71 +6343,62 @@ batContainer.innerText = "🔋";
 
 
 setInterval(async () => {
-    const vol = getMasterVolume()*100;
+    const vol1 = getMasterVolume() * 100;
     const volContainer = document.getElementById("vol");
     if (volContainer) {
-volContainer.title = Math.round(vol) + "%";
-if (vol==0) volContainer.innerText = "🔈";
-if (vol>0) volContainer.innerText = "🔉";
-if (vol>50) volContainer.innerText = "🔊"
-}
+        volContainer.title = Math.round(vol1) + "%";
+        if (vol1 == 0) volContainer.innerText = "🔈";
+        else if (vol1 > 50) volContainer.innerText = "🔊";
+        else volContainer.innerText = "🔉"; // Оптимізовано checks
+    }
 }, 500);
 
+document.body.addEventListener('keydown', async function(event) {
+let volDN = "AudioVolumeDown"
+let volUP = "AudioVolumeUp"
+    // Регулювання гучності для Mac-розкладки
+    if (currentKeyboardLayout == "mac") {
+    volDN = 'F11';
+    volUP = 'F10';
+    }
+        let volPercent = Math.round(getMasterVolume() * 100); 
 
-  document.body.addEventListener('keydown', async function(event) {
+if (event.key === volUP) {
+  event.preventDefault()
+    volPercent = Math.min(volPercent + 5, 100); // 90 + 5 = 95 (точно!)
+} else if (event.key === volDN) {
+  event.preventDefault()
+    volPercent = Math.max(volPercent - 5, 0);
+}
 
-          if (event.altKey && event.key === 'F4') {
-          // Prevent default browser behavior (like closing the tab)
-          event.preventDefault();
+vol = volPercent / 100; // Перетворюємо в 0.95 тільки для аудіо-контексту
+    
 
-          // Target the element with the specific focus class
-          const activeWindow = document.querySelector('.winbox.focus');
+    // Закриття активного вікна Infinity OS через Alt + F4
+    if (event.altKey && event.key === 'F4') {
+        event.preventDefault();
+        const activeWindow = document.querySelector('.winbox.focus');
+        if (activeWindow && activeWindow.winbox) {
+            activeWindow.winbox.close();
+        }
+    }
 
-          if (activeWindow) {
-  activeWindow.winbox.close();
-          }
-      }
-
-
+    // Блокування шкідливих для браузерної ОС дефолтних комбінацій (Схоронність, Друк тощо)
     if (event.ctrlKey || event.metaKey) {
         const key = event.key.toLowerCase();
-        
-
         const isAllowed = ['s', 'p', 'f'].includes(key);
 
         if (isAllowed) {
             event.preventDefault();
             event.stopPropagation();
-
-}
-        
+        }
     }
 });
+
 
 
 //indexedDB.deleteDatabase(DB_NAME);
 //localStorage.clear();
 
-async function takeSystemScreenshot() {
-    try {
-        // Очікуємо завершення створення File
-        const file = await capture(document.body, `snap_${Date.now()}.png`);
-        alert(file)
-        
-        if (file) {
-            // Додаємо у внутрішній масив (Virtual FS)
-            fs.push(file);
-            
-            // Зберігаємо в IndexedDB (через ваш серіалізатор)
-            const success = await saveFileToDB(file);
-            
-            if (success) {
-                console.log("Screenshot saved.");
-            }
-        }
-    } catch (err) {
-        console.error("Screenshot failed:", err.message);
-        // Тут можна викликати ваш менеджер діалогів для сповіщення про помилку
-    }
-}
+
 

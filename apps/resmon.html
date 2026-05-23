@@ -3,19 +3,24 @@
   * { user-select: none; font-family: sans-serif; box-sizing: border-box; }
   
   /* Контейнер для двох колонок */
-  .charts-container {
-    display: flex;
-    gap: 15px;
-    width: 100%;
-    margin-bottom: 45px;
-  }
+.charts-container {
+  display: flex;
+  gap: 15px;
+  width: 100%;
+  margin-bottom: 45px;
+  padding-bottom: 30px;
+  position: relative; /* Ізолює абсолютні елементи Chart.js всередині контейнера */
+  clear: both;        /* Запобігає обтіканню */
+}
+
   
 .chart-box {
   flex: 1;
   min-width: 0;
-  height: 140px; /* Фіксуємо висоту секції */
+  height: 200px; /* Фіксуємо висоту секції */
 }
 canvas {
+  box-sizing: border-box; 
   width: 100% !important;
   height: 100% !important; /* Канвас заповнить коробку */
 }
@@ -25,12 +30,51 @@ canvas {
     cursor: pointer; font-weight: bold; 
   }
   
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; color: black; }
-  th { text-align: left; background: #eee; padding: 5px; font-size: 0.8em; border-bottom: 2px solid #ccc; }
-  td { padding: 5px; border-bottom: 1px solid #eee; font-size: 0.85em; }
-  
-  h2 { font-size: 1.1em; margin: 10px 0 5px 0; }
-  
+  /* Нові стилі для списку процесів замість table, th, td */
+.process-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px;
+  margin-top: 10px;
+}
+
+.process-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.5); /* Легкий фон для розділення */
+  border-radius: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.process-info {
+  flex: 1;
+  min-width: 0; /* Щоб довгий текст не розпирав флекс */
+  cursor: pointer;
+}
+
+.process-title {
+  font-size: 0.95em;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.process-id {
+  color: #bbb;
+  font-size: 0.75em;
+  display: block;
+  margin-top: 2px;
+}
+
+
+.kill-btn:hover {
+  background-color: #ff4d4d;
+  color: white;
+  border-color: #ff3333;
+}
+
   p, h2 {
     padding-left: 10px;
 }
@@ -51,9 +95,7 @@ canvas {
 </div>
 
 <h2 id='processes_title'>Processes:</h2>
-<table>
-  <tbody id="process-table-body"></tbody>
-</table>
+<div id="process-list" class="process-list"></div>
 
 
 <script src="../dist/chart.umd.js"></script>
@@ -186,51 +228,52 @@ processWorker.onmessage = (e) => {
   chart.update();
 };
 
+// Знаходимо новий контейнер
+const processContainer = document.getElementById('process-list');
+
 function addRow(id, title, type, isHidden = false) {
-    const tr = document.createElement('tr');
+    const item = document.createElement('div');
+    item.className = 'process-item';
     
-    tr.innerHTML = `
-    <td onclick="parent.fore('${id}', '${type}');" style="word-break: break-all; cursor: pointer; padding: 10px 5px; width: 95%;">
-        <span style="color: ${isHidden ? "#777" : "#000"};">
-            ${title}
-        </span>
-        <br><small style="color: #bbb; font-size: 0.75em;">${id}</small>
-    </td>
-    <td style="text-align: center; vertical-align: middle;">
-        <button onclick="parent.kill('${id}', '${type}'); updateProcessList();">
-            ×
-        </button>
-    </td>
-`;
-    tableBody.appendChild(tr);
+    // Встановлюємо колір тексту для прихованих вікон
+    const textColor = isHidden ? "#777" : "#000";
+    
+    item.innerHTML = `
+      <div class="process-info" onclick="parent.fore('${id}', '${type}');">
+        <span class="process-title" style="color: ${textColor};">${title}</span>
+        <span class="process-id">${id}</span>
+      </div>
+      <button class="kill-btn" onclick="parent.kill('${id}', '${type}'); updateProcessList();">
+        ×
+      </button>
+    `;
+    
+    processContainer.appendChild(item);
 }
+
 function updateProcessList() {
-    tableBody.innerHTML = '';
+    processContainer.innerHTML = ''; // Очищаємо контейнер
 
     // 1. ВІКОННІ ПРОЦЕСИ (WinBox)
-    
     try {
         const winboxCollection = window.parent.document.getElementsByClassName("winbox");
-        if (winboxCollection.length === 0) {
-            tableBody.innerHTML += '';
-        }
         Array.from(winboxCollection).forEach(el => {
             const title = el.querySelector('.wb-title')?.innerText || parent._("unknown");
-            
-const hidden = el.classList.contains("hide");
-
+            const hidden = el.classList.contains("hide");
             addRow(el.id, title, 'winbox', hidden);
         });
     } catch (e) { console.error(e); }
 
-try {
+    // 2. СИСТЕМНІ ВОРКЕРИ
+    try {
         const workers = window.parent.systemWorkers || [];
         workers.forEach(w => {
-            // Використовуємо вашу функцію addRow, додаючи помітку [Worker]
+            // Додаємо мітку [Worker] для наочності у диспетчері
             addRow(w.id, `${w.url.split('/').pop()}`, 'worker', false);
         });
     } catch (e) { console.error(e); }
 }
+
 
 // Інтервали оновлення
 setInterval(updateProcessList, 500);

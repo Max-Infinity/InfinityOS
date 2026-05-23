@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- outer gear -->
+  <path d="
+    M32 10
+    L36 10
+    L38 16
+    L44 18
+    L49 14
+    L52 17
+    L48 22
+    L50 28
+    L56 30
+    L56 34
+    L50 36
+    L48 42
+    L52 47
+    L49 50
+    L44 46
+    L38 48
+    L36 54
+    L32 54
+    L28 54
+    L26 48
+    L20 46
+    L15 50
+    L12 47
+    L16 42
+    L14 36
+    L8 34
+    L8 30
+    L14 28
+    L16 22
+    L12 17
+    L15 14
+    L20 18
+    L26 16
+    L28 10
+    Z"
+    fill="#f5f5f7"
+    stroke="#c7c7cc"
+    stroke-width="2"
+    stroke-linejoin="round"/>
+
+  <!-- center -->
+  <circle
+    cx="32"
+    cy="32"
+    r="10"
+    fill="#ffffff"
+    stroke="#c7c7cc"
+    stroke-width="2"/>
+</svg>

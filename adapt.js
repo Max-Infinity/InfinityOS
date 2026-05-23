@@ -144,6 +144,9 @@ window.confirm = async (msg) => {
         </div>
       `,
       oncreate: function () {
+       if ( sounds.play === "function") {
+            sounds.play("question");
+        }
         this.body.querySelector("#okBtn").onclick = () => { this.close(); resolve(true); };
         this.body.querySelector("#cancelBtn").onclick = () => { this.close(); resolve(false); };
       }

@@ -102,7 +102,7 @@ progress::-moz-progress-bar {
 
 <div class="search-container">
     <div class="search-box">
-        <input type="text" id="searchInput" placeholder="Пошук..." autocomplete="on">
+        <input type="text" id="searchInput" placeholder="..." autocomplete="on">
         <button id="searchBtn">🔍</button>
     
 
@@ -137,7 +137,7 @@ progress::-moz-progress-bar {
 
 
 const inp = parent.parent.getCurrDLang() || parent.parent.dateLang;
-const lang = inp.split("-")[0].toLowerCase();
+const lang = inp.split("-")[0].toLowerCase() || inp.toLowerCase();
 console.log(lang)
 
 const translations = {
@@ -184,6 +184,17 @@ const translations = {
         history: "История",
         bookmarks: "Закладки",
         summary: "Сводка"
+    },
+    pl: {
+        all: "Wszystko",
+        pictures: "Obrazy",
+        videos: "Wideo",
+        search: "Szukaj",
+        downloads: "Pobrane",
+        clear: "Wyczyść",
+        history: "Historia",
+        bookmarks: "Zakładki",
+        summary: "Podsumowanie"
     }
 };
 

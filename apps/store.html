@@ -270,7 +270,7 @@ const err = document.getElementById("err");
 let BASE_URL = "https://cosmic-dragon-a1ab65.netlify.app/";
 let META_URL = BASE_URL + "meta.json";
 
-let localApps = parent.getApps();
+// let localApps = parent.getApps();
 // If "name" property of app is same, then we need to show update button, not install.
 // If "hash" property of app is same as app size form store, then user has older version and needs to update.
 
@@ -360,7 +360,7 @@ function createCard(app) {
     card.className = "app-card";
 
     card.innerHTML = `
-        <h3 style="white-space: nowrap;">${app.name || ""}</h3>
+        <p style="white-space: nowrap; font-weight: bold; font-size: 20px;">${app.name || ""}</p>
         <small>${app.developer || ""}</small>
         <br>
         <button class="inst">Install</button>
