@@ -21,5 +21,8 @@ More info about project at:
 
 https://dev.to/max_f2ab6697eb4060d4bc660
 
+User wiki and Dev Docs:
+
+https://github.com/Max-Infinity/InfinityOS/wiki
 
 
