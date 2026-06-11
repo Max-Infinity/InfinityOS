@@ -2,9 +2,6 @@
 <html>
 <head>
     <link rel="stylesheet" href="global.css">
-    
-  
-
 </head>
 <body>
     <div style="height: 100%; display: flex; white-space: nowrap; flex-direction: column;">
@@ -46,9 +43,6 @@ let currentRealUrl = sett.homepage;
         let currentBlobUrl = null; // Для очищення пам'яті        
         
         function getDownloadsFolder(){return downloadsFolder;}
-        function openSettings(){
-			// ...
-		}
 
         window.addEventListener('contextmenu', (e) => {
     const isInput = ["TEXTAREA", "INPUT"].includes(e.target.tagName);
@@ -81,11 +75,11 @@ const isFile = (url)=> url.match(fileRegex);
         
 
         function openSettings(){
-            new parent.wm(parent._("settings_title"), parent.getIcns().settings, {x: "center",y: "center",class: wbtheme+" no-full",minheight: 700, height: 700, minwidth:500, width: 500, 
+            new parent.getWM(parent._("settings_title"), parent.getIcns().settings, {x: "center",y: "center",class: parent.getWBtheme()+" no-full",minheight: 700, height: 700, minwidth:500, width: 500, 
                 html: `
                 <input id="homepage" type="text" placeholder="start.htm"><br>
                     <input id="downloads" type="text" placeholder="downloads/"><br>
-                    <textarea id="proxies" placeholder="${JSON.stringify(DEFAULT_PROXIES)}"></textarea>
+                    <textarea id="proxies" placeholder="${DEFAULT_PROXIES.map(p=> p+"/n")}"></textarea>
 
             `})
         }
@@ -289,7 +283,7 @@ window.addEventListener('contextmenu', (e) => {
 const isInput = ["TEXTAREA", "INPUT"].includes(e.target.tagName);
 if (isInput) {
 e.preventDefault();
-parent.parent.drawEditContextMenu(e, ${window.left}+e.clientX,${window.top}+e.clientY, document)
+parent.parent.drawEditContextMenu(e, 0+e.clientX,0+e.clientY, document)
 }
 })
 
@@ -347,9 +341,11 @@ localStorage.setItem = function(key, value) {
 };
 
 
-window.alert = (...a)=> parent.parent.alert(...a);
-window.prompt = (...a)=> parent.parent.prompt(...a);
-window.confirm = (...a)=> parent.parent.confirm(...a);
+// Якщо додаток адаптовано під Infinity OS і він використовує await:
+alert = (...a) => parent.parent.alert(...a);
+prompt = async (...a) => await parent.parent.prompt(...a);
+confirm = async (...a) => await parent.parent.confirm(...a);
+
 window.console = parent.parent.console;
 window.Worker = parent.Worker;
 window.open = parent.window.open;

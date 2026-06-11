@@ -10,7 +10,12 @@
 <script src="dist/marked.umd.js"></script>
 <script src="dist/turndown.min.js"></script>
 <script src="dist/mammoth.browser.min.js"></script>
-<script src="dist/html-docx.min.js"></script>>
+<script src="dist/html-docx.min.js"></script>
+
+<div id="desktop-fore">
+  <p style="padding:0;margin:0;font-size: calc(100vw / 10)" class="clock-date"></p>
+  <b style="font-size: calc(80vw / 5);" class="clock-time"></b>
+</div>
 
 <div id="splash">
 <img style='width:min(10vw, 64px);' src="branding/logo.png">
@@ -75,13 +80,17 @@ html,body {
   <li id="t_all" onclick="document.execCommand('selectAll'); this.closest('.menu').style.display='none';"><p data-i18n="all_btn">all_btn</p><span>⌘+A</span></li>
 </div>
 
-<div  id="sysmenu">
+<div id="sysmenu">
+  <div id="appmenu"></div>
 
-<div  id="appmenu">
-  
-</div>
-    <button onclick="safeShutdown({ restart: true });"><p data-i18n="restart">restart</p></button>
-    <button onclick="safeShutdown({ restart: false });"><p data-i18n="shutdown">shutdown</p></button>
+  <div class="sysmenu-actions">
+    <button onclick="safeShutdown({ restart: true });" data-i18n="restart">
+      Restart
+    </button>
+    <button onclick="safeShutdown({ restart: false });" data-i18n="shutdown">
+      Shutdown
+    </button>
+  </div>
 </div>
 
  <footer id="taskbar">

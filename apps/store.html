@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="global.css">
 
 <style>
-    body{user-select: none;}
+    body{user-select: none; overflow-x: hidden;}
 .app-card {
     border-radius: 15px;
     padding: 10px;
@@ -27,7 +27,7 @@ p, h2 {
 
 /* Carousel */
 .slideshow-container {
-  max-width: 1000px;
+  max-width: 600px;
   position: relative;
   margin: auto;
   min-height: 100px;
@@ -39,11 +39,14 @@ p, h2 {
     transition: transform 0.4s ease;
     height: 300px;
     z-index: 0;
-    
     align-items: center;
   justify-content: center;
-  
-  
+animation: fadeEffect 0.6s ease;
+}
+
+@keyframes fadeEffect {
+    from { opacity: 0.5;}
+    to { opacity: 1;}
 }
 
 .mySlides img {
@@ -51,10 +54,8 @@ p, h2 {
   height: 300px;
   object-fit: contain;
   border: none;
-  
-
-background: #000;
-
+  border-radius: 10px;
+  background: #000;
 }
 
 .prev, .next {
@@ -63,36 +64,20 @@ background: #000;
   top: 50%;
   
   padding: 15px;
-  background: rgba(0,0,0,0.5);
   color: white;
   font-weight: bold;
   font-size: 15px;
-
-
 }
 
 .next {
   right: 0;
 }
-.mySlides .text{
-    display:none;
-}
-.mySlides:hover .text{
-    display:block;
-  color: #fff;
-  background: rgba(0,0,0,0.5);
-  position: absolute;
-  font-size: 15px;
-  width: 100%;
-  text-align: center;
-}
 
 
-/* Most strange thingy ever made in the whole Infinity Systems ecosystem */
+/* Repository Limits / Error */
 #err{
     display: none;
     position: absolute;
-    
     top:0;
     left: 0;
     width: 100%;
@@ -120,28 +105,26 @@ background: #000;
     width: 320px;
 }
 
-/* Робимо body контейнером на всю висоту вікна */
 body {
     display: flex;
     flex-direction: column;
-    height: 100vh; /* Важливо для фіксації */
+    height: 100vh;
     margin: 0;
     padding: 0;
-    overflow: hidden; /* Забороняємо загальний скрол */
+    overflow: hidden;
 }
 
 .toolbar {
-    flex-shrink: 0; /* Не дозволяємо тулбару стискатися */
-    
+    flex-shrink: 0;
+    display: flex;
+    gap: 5px;
+    padding: 5px;
 }
 
-/* Контентна частина, яка буде скролитися */
 main {
     flex-grow: 1;
-    overflow-y: auto; /* Дозволяємо скрол лише тут */
-    
+    overflow-y: auto;
 }
-
 </style>
 </head>
 <body>
@@ -154,93 +137,17 @@ main {
         <option value="node">NodeJS</option>
         <option value="theme">Theme</option>
     </select>
-
-    <input type="search" id="search-input" placeholder="Search apps..." style="flex-grow:1;">
-    <button id="search-btn">Search</button>
+    <input type="search" id="search-input" style="flex-grow:1;">
+    <button id="search-btn" onclick="update()">Search</button>
 </div>
 
 <main>
 
 <div id="err">
-    <h2>Repository unavailable</h2>
+    </div>
 
-The service is temporarily paused due to monthly usage limits.
-It will resume when the next cycle begins.
-
-<br><br>
-
-<b>What can you do now?</b>
-<ul>
-    <li>Wait for the next cycle</li>
-    <li>Connect to a custom repository</li>
-</ul>
-
-<br>
-
-<b>Tip:</b><br>
-Avoid frequently downloading large applications to reduce usage.
-    <br>
-    <button onclick="customRepo()">Connect to custom repository</button>
-    
-    <script>
-        function customRepo() {
-            document.getElementById("err").innerHTML = `
-        <h2>Connect to custom repository</h2>
-        <input id="meta" placeholder="Meta URL"><br><br>
-        <button onclick="connect()">Connect</button>
-        <p id="status"></p>
-    `;
-        }
-        function getRepoUrl(metaUrl) {
-    const url = new URL(metaUrl);
-    
-    // прибираємо останній сегмент (apps.json або meta.json)
-    const parts = url.pathname.split("/");
-    parts.pop(); // remove file name
-
-    const basePath = parts.join("/") + "/";
-
-    return url.origin + basePath;
-}
-
-
-        
-        async function connect() {
-            
-            const metaInput = document.getElementById("meta");
-            const status = document.getElementById("status");
-            
-            
-            const meta = metaInput.value.trim();
-            const repo = getRepoUrl(meta);
-            parent.console.log(meta + " < "+repo)
-            if (!repo || !meta) {
-                status.innerText = "Please fill both fields.";
-                return;
-            }
-            
-            try {
-                
-                
-                // переключення
-                BASE_URL = repo;
-                META_URL = meta;
-                
-                status.innerText = "Connected successfully!";
-                
-                // перезапуск Store
-                const note = await start();
-                status.innerText = note;
-                
-            } catch (e) {
-                status.innerText = "Failed to connect. Check URLs.";
-                parent.console.error(e.message)
-            }
-        }
-    </script>
-</div>
 <section>
-<h2>Popular</h2>
+<h2 id="title-popular">Popular</h2>
 
 <div class="slideshow-container">
     <div id="slides-wrapper"></div>
@@ -248,11 +155,10 @@ Avoid frequently downloading large applications to reduce usage.
     <a class="prev" onclick="plusSlides(-1)">❮</a>
     <a class="next" onclick="plusSlides(1)">❯</a>
 </div>
-
 </section>
 
 <section>
-<h2>List</h2>
+<h2><span id="title-list">List</span> <button id="btn-copy-meta" onclick="copyMeta()">Copy meta</button><button id="btn-custom-repo" onclick="customRepo()"></button></h2>
 <div id="apps-list"></div>
 </section>
 
@@ -264,42 +170,291 @@ Avoid frequently downloading large applications to reduce usage.
 
 <script>
 let apps;
-
 const err = document.getElementById("err");
 
-let BASE_URL = "https://cosmic-dragon-a1ab65.netlify.app/";
-let META_URL = BASE_URL + "meta.json";
+function getRepoUrl(metaUrl) {
+    try {
+        const url = new URL(metaUrl);
+        const parts = url.pathname.split("/");
+        parts.pop(); 
+        return url.origin + parts.join("/") + "/";
+    } catch(e) {
+        return "";
+    }
+}
 
-// let localApps = parent.getApps();
-// If "name" property of app is same, then we need to show update button, not install.
-// If "hash" property of app is same as app size form store, then user has older version and needs to update.
+let META_URL = localStorage.getItem("StoreRepo") || "https://cosmic-dragon-a1ab65.netlify.app/meta.json";
+let BASE_URL = getRepoUrl(META_URL) ;
 
+
+const inp = parent.getCurrDLang() || parent.dateLang || "en";
+const lang = inp.split("-")[0].toLowerCase();
+
+// РОЗШИРЕНИЙ СЛОВНИК ПЕРЕКЛАДІВ ДЛЯ ІНТЕРФЕЙСУ STORE
+const translations = {
+    uk: {
+        all: "Усе",
+        search: "Пошук",
+        popular: "Популярні",
+        list: "Список додатків",
+        copyMeta: "Копіювати метапакет",
+        install: "Встановити",
+        tester: "Тестувальник",
+        minOS: "Мінімальна версія ОС",
+        deps: "Залежності",
+        searchPlaceholder: "Пошук додатків...",
+        repoUnavailable: "Репозиторій недоступний",
+        noInternet: "Ваш пристрій не підключено до Інтернету.",
+        checkInternet: "Перевірте підключення до мережі",
+        browseLocal: "Переглядати встановлені додатки",
+        retry: "Повторити спробу",
+        limitReached: "Перевищено ліміт використання сховища на цей місяць.",
+        resumeCycle: "Робота відновиться з початком нового циклу.",
+        whatToDo: "Що можна зробити зараз?",
+        waitNext: "Зачекати наступного циклу",
+        connectCustom: "Підключити сторонній репозиторій",
+        tipTitle: "Порада:",
+        tipDesc: "Уникайте частого завантаження великих додатків для економії трафіку.",
+        
+        placeholderMeta: "Посилання на Meta URL",
+        connectBtn: "Підключити",
+        fillFields: "Будь ласка, заповніть обидва поля.",
+        connectedSuccess: "Успішно підключено!",
+        connectFailed: "Помилка підключення. Перевірте URL.",
+        alertSuccess: "Успішно встановлено: ",
+        alertCopied: "Метапакет скопійовано в буфер."
+    },
+    en: {
+        all: "All",
+        search: "Search",
+        popular: "Popular",
+        list: "List",
+        copyMeta: "Copy meta",
+        install: "Install",
+        tester: "Tester",
+        minOS: "Minimal OS version",
+        deps: "Dependencies",
+        searchPlaceholder: "Search apps...",
+        repoUnavailable: "Repository unavailable",
+        noInternet: "Your device isn't connected to Internet.",
+        checkInternet: "Check your Internet connection",
+        browseLocal: "Browse and open local apps",
+        retry: "Retry",
+        limitReached: "The service is temporarily paused due to monthly usage limits.",
+        resumeCycle: "It will resume when the next cycle begins.",
+        whatToDo: "What can you do now?",
+        waitNext: "Wait for the next cycle",
+        connectCustom: "Connect to custom repository",
+        tipTitle: "Tip:",
+        tipDesc: "Avoid frequently downloading large applications to reduce usage.",
+        
+        placeholderMeta: "Meta URL",
+        connectBtn: "Connect",
+        fillFields: "Please fill both fields.",
+        connectedSuccess: "Connected successfully!",
+        connectFailed: "Failed to connect. Check URLs.",
+        alertSuccess: "Successfully installed: ",
+        alertCopied: "Metapackage copied."
+    },
+    fr: {
+        all: "Tout",
+        search: "Recherche",
+        popular: "Populaire",
+        list: "Liste des applications",
+        copyMeta: "Copier le méta",
+        install: "Installer",
+        tester: "Testeur",
+        minOS: "Version minimale de l'OS",
+        deps: "Dépendances",
+        searchPlaceholder: "Rechercher des applications...",
+        repoUnavailable: "Dépôt indisponible",
+        noInternet: "Votre appareil n'est pas connecté à Internet.",
+        checkInternet: "Vérifiez votre connexion Internet",
+        browseLocal: "Parcourir les applications locales",
+        retry: "Réessayer",
+        limitReached: "Le service est temporairement suspendu en raison des limites d'utilisation mensuelles.",
+        resumeCycle: "Il reprendra au début du prochain cycle.",
+        whatToDo: "Que pouvez-vous faire maintenant?",
+        waitNext: "Attendre le prochain cycle",
+        connectCustom: "Connecter un dépôt personnalisé",
+        tipTitle: "Conseil:",
+        tipDesc: "Évitez de télécharger fréquemment de grandes applications pour réduire l'utilisation.",
+        
+        placeholderMeta: "URL Meta",
+        connectBtn: "Connecter",
+        fillFields: "Veuillez remplir les deux champs.",
+        connectedSuccess: "Connecté avec succès!",
+        connectFailed: "Échec de la connexion. Vérifiez les URL.",
+        alertSuccess: "Installé avec succès: ",
+        alertCopied: "Métapaquet copié."
+    },
+    ru: {
+        all: "Все",
+        search: "Поиск",
+        popular: "Популярные",
+        list: "Список приложений",
+        copyMeta: "Копировать метапакет",
+        install: "Установить",
+        tester: "Тестировщик",
+        minOS: "Минимальная версия ОС",
+        deps: "Зависимости",
+        searchPlaceholder: "Поиск приложений...",
+        repoUnavailable: "Репозиторий недоступен",
+        noInternet: "Ваше устройство не подключено к Интернету.",
+        checkInternet: "Проверьте подключение к Интернету",
+        browseLocal: "Просматривать локальные приложения",
+        retry: "Повторить",
+        limitReached: "Обслуживание временно приостановлено из-за месячных лимитов использования.",
+        resumeCycle: "Оно возобновится с началом следующего цикла.",
+        whatToDo: "Что можно сделать сейчас?",
+        waitNext: "Дождаться следующего цикла",
+        connectCustom: "Подключить сторонний репозиторий",
+        tipTitle: "Совет:",
+        tipDesc: "Избегайте частой загрузки больших приложений для экономии трафика.",
+        
+        placeholderMeta: "Meta URL ссылки",
+        connectBtn: "Подключить",
+        fillFields: "Пожалуйста, заполните оба поля.",
+        connectedSuccess: "Успешно подключено!",
+        connectFailed: "Ошибка подключения. Проверьте URL.",
+        alertSuccess: "Успешно установлено: ",
+        alertCopied: "Метапакет скопирован."
+    },
+    pl: {
+        all: "Wszystko",
+        search: "Szukaj",
+        popular: "Popularne",
+        list: "Lista aplikacji",
+        copyMeta: "Kopiuj meta",
+        install: "Instaluj",
+        tester: "Tester",
+        minOS: "Minimalna wersja OS",
+        deps: "Zależności",
+        searchPlaceholder: "Szukaj aplikacji...",
+        repoUnavailable: "Repozytorium niedostępne",
+        noInternet: "Twoje urządzenie nie jest połączone z Internetem.",
+        checkInternet: "Sprawdź połączenie z Internetem",
+        browseLocal: "Przeglądaj lokalne aplikacje",
+        retry: "Ponów",
+        limitReached: "Usługa została tymczasowo wstrzymana z powodu miesięcznych limitów transferu.",
+        resumeCycle: "Zostanie wznowiona wraz z początkiem nowego cyklu.",
+        whatToDo: "Co możesz teraz zrobić?",
+        waitNext: "Poczekać na kolejny cykl",
+        connectCustom: "Połącz z własnym repozytorium",
+        tipTitle: "Wskazówka:",
+        tipDesc: "Unikaj częstego pobierania dużych aplikacji, aby ograniczyć użycie danych.",
+        
+        placeholderMeta: "Meta URL",
+        connectBtn: "Połącz",
+        fillFields: "Proszę wypełnić oba pola.",
+        connectedSuccess: "Połączono pomyślnie!",
+        connectFailed: "Nie udało się połączyć. Sprawdź adresy URL.",
+        alertSuccess: "Pomyślnie zainstalowano: ",
+        alertCopied: "Metapaczka skopiowana."
+    }
+};
+
+const currentStrings = translations[lang] || translations.en;
+
+// Функція локалізації статичних HTML елементів
+function applyDOMTranslations() {
+    document.getElementById("mode-select").options[0].text = currentStrings.all;
+    document.getElementById("search-input").placeholder = currentStrings.searchPlaceholder;
+    document.getElementById("search-btn").innerText = currentStrings.search;
+    document.getElementById("title-popular").innerText = currentStrings.popular;
+    document.getElementById("title-list").innerText = currentStrings.list;
+    document.getElementById("btn-copy-meta").innerText = currentStrings.copyMeta;
+    document.getElementById("btn-custom-repo").innerText = currentStrings.connectCustom;
+}
+
+function showNoInternetUI() {
+    err.innerHTML = `
+        <h2>${currentStrings.repoUnavailable}</h2>
+        ${currentStrings.noInternet}
+        <br><br>
+        <b>${currentStrings.whatToDo}</b>
+        <ul>
+            <li>${currentStrings.checkInternet}</li>
+            <li>${currentStrings.browseLocal}</li>
+        </ul>
+        <button onclick="start()">${currentStrings.retry}</button>
+        <br>
+    `;
+    err.style.display = "block";
+}
+
+function showTrafficLimitUI() {
+    err.innerHTML = `
+        <h2>${currentStrings.repoUnavailable}</h2>
+        ${currentStrings.limitReached}<br>
+        ${currentStrings.resumeCycle}
+        <br><br>
+        <b>${currentStrings.whatToDo}</b>
+        <ul>
+            <li>${currentStrings.waitNext}</li>
+            <li>${currentStrings.connectCustom}</li>
+        </ul>
+        <br>
+        <b>${currentStrings.tipTitle}</b><br>
+        ${currentStrings.tipDesc}
+        <br>
+        <button onclick="customRepo()">${currentStrings.connectCustom}</button>
+    `;
+    err.style.display = "block";
+}
+
+function customRepo() {
+    err.innerHTML = `
+        <h2>${currentStrings.connectCustom}</h2>
+        <input id="meta" placeholder="${currentStrings.placeholderMeta}"><br><br>
+        <button onclick="connect()">${currentStrings.connectBtn}</button>
+        <p id="status"></p>
+    `;
+    err.style.display = "block";
+}
+
+
+
+async function connect() {
+    const metaInput = document.getElementById("meta");
+    const status = document.getElementById("status");
+    const meta = metaInput.value.trim();
+    const repo = getRepoUrl(meta);
+    
+    if (!repo || !meta) {
+        status.innerText = currentStrings.fillFields;
+        return;
+    }
+    
+    try {
+        BASE_URL = repo;
+        META_URL = meta;
+        status.innerText = currentStrings.connectedSuccess;
+        const note = await start();
+        status.innerText = note;
+        localStorage.setItem("StoreRepo", meta);
+    } catch (e) {
+        status.innerText = currentStrings.connectFailed;
+        parent.console.error(e.message);
+    }
+}
 
 const start = async () => {
     let ret;
+    applyDOMTranslations();
+    
     if (!navigator.onLine){
-        
-        err.innerHTML = `
-            <h2>Repository unavailable</h2>
-
-Your device isn't connected to Internet.
-
-<br><br>
-
-<b>What can you do now?</b>
-<ul>
-    <li>Check your Internet connection</li>
-    <li>Browse and open local apps</li>
-</ul><button onclick="start()">Retry</button>
-
-<br>
-        `
-err.style.display = "block";
+        showNoInternetUI();
+        return "Offline";
     }
     try {
         const response = await fetch(META_URL);
         
         if (!response.ok) {
+            if (response.status === 429 || response.status === 509) { // Трафік / Ліміти
+                showTrafficLimitUI();
+                return "Limit reached";
+            }
             throw new Error("HTTP " + response.status);
         }
         
@@ -307,32 +462,24 @@ err.style.display = "block";
         
         if (!Array.isArray(apps)) {
             ret = "Invalid meta format";
-parent.console.error(ret)
-            //throw new Error("Invalid meta format");
-            
+            parent.console.error(ret);
         }
-        //localStorage.setItem("store_cache", JSON.stringify(apps))
         
         update();
-        
         ret = "Found: " + apps.length;
         parent?.console.log?.("Found: " + apps.length);
         err.style.display = "none";
         
     } catch (e) {
         console.error("Store load failed:", e);
-        ret = "Store load failed:"+e;
-        
-        if (err) {
-            err.style.display = "block";
-            
-        }else{
-            
-        }
+        ret = "Store load failed:" + e;
+        showTrafficLimitUI(); // Повертаємо вікно кастомного репо у разі падіння хоста
     }
     return ret;
 }
-start()
+
+// Ініціалізація
+start();
 
 const appsContainer = document.getElementById("apps-list");
 const slidesWrapper = document.getElementById("slides-wrapper");
@@ -341,18 +488,15 @@ const dialogContent = document.getElementById("dialog-content");
 const currentOS = parent.getDevProps().os.version;
 
 function formatVersion(rawDate) {
-    // Input: "24042026"
     const day = rawDate.slice(0, 2);
     const month = rawDate.slice(2, 4);
     const year = rawDate.slice(4, 8);
-    
-    return `${year}${month}${day}`; // Output: "20260424"
+    return `${year}${month}${day}`;
 }
+
 function isCompatible(app) {
     return formatVersion(currentOS) >= formatVersion(app.minOS);
 }
-
-
 
 /* Cards */
 function createCard(app) {
@@ -363,29 +507,27 @@ function createCard(app) {
         <p style="white-space: nowrap; font-weight: bold; font-size: 20px;">${app.name || ""}</p>
         <small>${app.developer || ""}</small>
         <br>
-        <button class="inst">Install</button>
+        <button class="inst">${currentStrings.install}</button>
     `;
     
-    
-	if (!isCompatible(app)){
-	card.querySelector("button").disabled = true;
-	}
+    if (!isCompatible(app)){
+        card.querySelector("button").disabled = true;
+    }
     card.onclick = () => openDialog(app);
 
-card.querySelector("button").onclick = (e) => {
-    e.stopPropagation();
-    install(app.name);
-};
-
-    
+    card.querySelector("button").onclick = (e) => {
+        e.stopPropagation();
+        install(app.name);
+    };
 
     return card;
 }
 
 function renderApps(list) {
     appsContainer.innerHTML = "";
-    try{
-    list.forEach(app => appsContainer.appendChild(createCard(app)));}catch{}
+    try {
+        list.forEach(app => appsContainer.appendChild(createCard(app)));
+    } catch(e) {}
 }
 
 /* Carousel */
@@ -397,12 +539,10 @@ function renderCarousel(list) {
         slide.className = "mySlides";
 
         slide.innerHTML = `
-            <img src="${BASE_URL+app.banner || ""}">
-            <div class="text">${app.name || ""}</div>
+            <img alt="${app.name || ""}" title="${app.name || ""}" src="${(app.banner.includes("://") ? app.banner : BASE_URL+app.banner) || ""}">
         `;
 
         slide.onclick = () => openDialog(app);
-
         slidesWrapper.appendChild(slide);
     });
 
@@ -418,24 +558,26 @@ function openDialog(app) {
         <h2 style="user-select: text;">${app.name || ""}</h2>
         <small>${app.developer || ""}</small>
         <p style="user-select: text;">${app.desc || ""}</p>
-<button class="inst">Install</button>
+        <button class="inst">${currentStrings.install}</button>
         <hr>
-        <p><b>Tester:</b> ${app.tester || ""}</p>
-        <p><b>Minimal OS version:</b> ${app.minOS || "00000000"}</p>
+        <p><b>${currentStrings.tester}:</b> ${app.tester || ""}</p>
+        <p><b>${currentStrings.minOS}:</b> ${app.minOS || "00000000"}</p>
     `;
+    
     if (app.deps != null){
-    dialogContent.innerHTML += `
-    <p><b>Dependencies:</b> ${app.deps.join(", ")}</p>
-    `;
+        dialogContent.innerHTML += `
+        <p><b>${currentStrings.deps}:</b> ${app.deps.join(", ")}</p>
+        `;
     }
-    	if (!isCompatible(app)){
-	dialogContent.querySelector("button").disabled = true;
-	}
+    
+    if (!isCompatible(app)){
+        dialogContent.querySelector("button").disabled = true;
+    }
 
-dialog.querySelector("button").onclick = (e) => {
-    e.stopPropagation();
-    install(app.name);
-};
+    dialogContent.querySelector("button").onclick = (e) => {
+        e.stopPropagation();
+        install(app.name);
+    };
 }
 
 dialog.onclick = (e) => {
@@ -450,19 +592,17 @@ function filterApps() {
     const mode = modeSelect.value;
     const query = searchInput.value.toLowerCase();
     let a;
-try{
-     a =  apps.filter(app =>
-        (mode === "all" || app.type === mode) &&
-        app.name.toLowerCase().includes(query)
-    );
-}catch{
-    modeSelect.disabled = 1;
-    a =  apps;
+    try {
+         a = apps.filter(app =>
+            (mode === "all" || app.type === mode) &&
+            app.name.toLowerCase().includes(query)
+        );
+    } catch(e) {
+        modeSelect.disabled = 1;
+        a = apps;
+    }
+    return a;
 }
-return a;
-}
-
-
 
 async function install(name) {
     const app = apps.find(a => a.name === name);
@@ -481,29 +621,22 @@ async function install(name) {
         const blob = await res.blob();
         if (!blob) throw new Error("No BLOB provided.");
 
-        // Створюємо файл для розархівування
         const file = new File([blob], `tmp_${Date.now()}.zip`, {
             type: blob.type || "application/zip"
         });
 
-        // Розпаковуємо у корінь або специфічну папку
         await parent.unzipFile(file, "");
 
-        // Обробка залежностей (виправлено порівняння)
         if (app.deps && app.deps.length > 0) {
             await parent.npmUpdate();
             for (const pkg of app.deps) {
-                await parent.npmInstall(pkg); // Прибрано подвійний await
+                await parent.npmInstall(pkg);
             }
         }
 
-        // Логіка для JS-скриптів (автозавантаження)
         if (app.type === "js") {
-            // Шукаємо файл у внутрішній ФС
             const fileName = app.entry.split("/").pop().split(".")[0].toLowerCase() + '.js';
             const fileExists = parent.getFs().find(f => f.name == fileName);
-            parent.console.log(fileName+ ":" + fileExists)
-            parent.alert(fileName + ""+ fileExists)
             if (fileExists) {
                 let autoload = [];
                 const autoloadString = localStorage.getItem('infinity_os_autoload');
@@ -517,24 +650,14 @@ async function install(name) {
                     }
                 }
 
-                // Перевіряємо, чи вже є в автозавантаженні
                 if (!autoload.includes(fileName)) {
                     autoload.push(fileName);
                     localStorage.setItem('infinity_os_autoload', JSON.stringify(autoload));
-                    
-            
                 }
             }
         }
 
-        // Реєстрація в системі
-        parent.addApp({
-            name: app.name,
-            icon: app.icon, // Краще додати іконку відразу
-            url: null // Якщо додаток запускається через ядро
-        });
-
-        parent.alert("Successfully installed: " + app.name);
+        parent.alert(currentStrings.alertSuccess + app.name);
         return 1;
 
     } catch (e) {
@@ -543,14 +666,12 @@ async function install(name) {
     }
 }
 
-
 function update() {
     const filtered = filterApps();
-    
     renderApps(filtered);
-    try{
-    renderCarousel(filtered.filter(a => a.banner != ""));
-    }catch{}
+    try {
+        renderCarousel(filtered.filter(a => a.banner != ""));
+    } catch(e) {}
 }
 
 modeSelect.onchange = update;
@@ -565,30 +686,34 @@ function plusSlides(n) {
 
 function showSlides(n) {
     const slides = document.getElementsByClassName("mySlides");
-
     if (!slides.length) return;
     
-
     if (n > slides.length) slideIndex = 1;
     if (n < 1) slideIndex = slides.length;
 
     for (let s of slides) {
         s.style.display = "none";
-        s.style.transform = "translateX(-100%)";
     }
-
     slides[slideIndex - 1].style.display = "block";
-    slides[slideIndex - 1].style.transform = "translateX(0)";
 }
 
-/* Auto slide */
 setInterval(() => plusSlides(1), 4000);
 
-window.onError = (e) => {
-parent.console.error(e.message)
+window.onerror = (e) => {
+    parent.console.error(e.message);
 }
 
-</script>
+async function copyMeta(){
+    await navigator.clipboard.writeText(JSON.stringify(apps));
+    parent.alert(currentStrings.alertCopied);
+}
 
+document.addEventListener('keydown', async (event) => {
+    if (event.key === 'F12') {
+        event.preventDefault();
+        await copyMeta();
+    }
+});
+</script>
 </body>
 </html>

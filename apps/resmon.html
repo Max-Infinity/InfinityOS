@@ -1,12 +1,15 @@
 
 <style>
-  * { user-select: none; font-family: sans-serif; box-sizing: border-box; }
+  * { user-select: none; box-sizing: border-box; }
   
+  html, body {
+  overflow-x: hidden;
+}
   /* Контейнер для двох колонок */
 .charts-container {
   display: flex;
   gap: 15px;
-  width: 100%;
+  width:98.5%;
   margin-bottom: 45px;
   padding-bottom: 30px;
   position: relative; /* Ізолює абсолютні елементи Chart.js всередині контейнера */
@@ -45,8 +48,9 @@ canvas {
   justify-content: space-between;
   background: rgba(255, 255, 255, 0.5); /* Легкий фон для розділення */
   border-radius: 4px;
-  padding: 6px 10px;
+  padding: 5px 5px;
   border-bottom: 1px solid #eee;
+  min-width: 0;
 }
 
 .process-info {

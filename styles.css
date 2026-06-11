@@ -102,7 +102,7 @@ body {
 .tra:not(.win_cla) .wb-body{
 background:transparent !important;
 color:white !important; 
-text-shadow: 0 1px 1px #000;
+text-shadow: 1px 1px 1px #000;
 }
 
 /* =============================================
@@ -179,6 +179,12 @@ text-shadow: 0 1px 1px #000;
 /* =============================================
    CONTEXT MENU
    ============================================= */
+
+   @keyframes grow {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
 .menu {
   padding: 5px;
   border-radius: var(--radius-md);
@@ -191,10 +197,7 @@ text-shadow: 0 1px 1px #000;
   
 }
 
-@keyframes grow {
-  from { opacity: 0; transform: scale(0.8); }
-  to   { opacity: 1; transform: scale(1); }
-}
+
 
 .menu > li {
   border-radius: var(--radius-md);
@@ -239,7 +242,7 @@ text-shadow: 0 1px 1px #000;
   grid-auto-columns: 80px;
   justify-content: flex-start;
   gap: 0;
-  
+  z-index: 1;
   height: 100vh;
   overflow: hidden;
 }
@@ -293,7 +296,7 @@ body.taskbar-at-top .winbox.max {
   
   /* Притискаємо до самого низу */
   
-  left: 40px !important;
+left: 40px !important;
 z-index: 9999;
 /* Додаємо !important, щоб JS-розрахунки бібліотеки не заважали */
 height: var(--taskbar-height) !important;
@@ -308,9 +311,32 @@ body.taskbar-at-top .winbox.min {
 }
 
 
+#desktop-fore {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0; 
+  
+  /* Магія клік-наскрізності для самого контейнера */
+  pointer-events: none; 
+  
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 
+  /* Ефект прозоро-розмитого тексту */
+  color: transparent;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
 
-
+/* ГАРАНТІЯ: Усі елементи всередині форграунду теж ігнорують мишу */
+#desktop-fore * {
+  pointer-events: none !important;
+  user-select: none !important; /* Додатково вимикаємо спроби виділити текст */
+}
 
 
 .winbox.min .wb-control {
@@ -459,32 +485,53 @@ border-radius: none;
 
 #sysmenu {
   position: fixed;
-  z-index: 100;
+  z-index: 10000;
   font-size: 20px;
   background: var(--bg-panel) !important;
+  box-shadow: none;
   display: none;
+
   
   bottom: var(--taskbar-height);
   top: auto;
   border-radius: 0px;
   border-top-right-radius: var(--radius-md);
+  
+  /* Захист для всього меню: якщо воно раптом виросте, 
+     воно не повинно ламати екран */
+  flex-direction: column;
 }
 
-body.taskbar-at-top #sysmenu{
-top: var(--taskbar-height);	
-border-radius: 0px;
-border-bottom-right-radius: var(--radius-md);
-bottom: auto;
+body.taskbar-at-top #sysmenu {
+  top: var(--taskbar-height);	
+  border-radius: 0px;
+  border-bottom-right-radius: var(--radius-md);
+  bottom: auto;
+  
 }
+
+/* --- Оновлений блок списку додатків --- */
+#appmenu {
+  max-height: 50vh;          /* Обмеження: половина висоти екрана */
+  overflow-y: auto;          /* Вмикаємо вертикальний скрол, коли треба */
+  overflow-x: hidden;         /* Завжди ховаємо горизонтальний скрол */
+  transition: all 0.5s ease;
+}
+
+/* Стильний тонкий скролбар для Infinity OS (опціонально) */
 
 #appmenu button {
   border-bottom: 1px solid #aaaaaa55 !important;
+  width: 100%;               /* Щоб кнопки не стискалися при появі скролу */
+  text-align: left;          /* Рівняння тексту додатків */
+  transition: all 0.5s ease;
 }
 
-#sysmenu *{
-background: none !important;
-border: none !important; 
-color: var(--color-text-tretiary);
+#sysmenu * {
+  background: none !important;
+  border: none !important; 
+  color: var(--color-text-tretiary);
+    text-shadow: 1px 1px 1px #000 !important;
 }
 
 footer > img {
@@ -514,6 +561,7 @@ vr {
   bottom: calc(var(--taskbar-height) + 10px);
   top: auto;
   min-width: 10%;
+  max-width: 30vw;
   min-height: 60px;
   background: var(--info-bg, rgba(30, 30, 30, 0.5));
 
@@ -536,13 +584,7 @@ body.taskbar-at-top .notification {
   bottom: auto;
 }
 
-@keyframes slideIn {
-  to { opacity: 1; transform: translateX(0); }
-}
 
-@keyframes slideOut {
-  to { opacity: 0; transform: translateX(100%); }
-}
 
 
 /* =============================================
@@ -553,3 +595,73 @@ body.taskbar-at-top .notification {
   transition: all 0.5s ease;
 }
 
+@keyframes slideIn {
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideOut {
+  to { opacity: 0; transform: translateX(100%); }
+} 
+
+
+/* =============================================
+   WINBOX — ADVANCED ANIMATIONS (SPRING ENGINE)
+   ============================================= */
+
+/* Базовий стан вікна перед появою (холодне завантаження) */
+.winbox {
+    opacity: 0;
+    transform: scale(0.85) translateY(20px);
+    animation: winOpen 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    will-change: transform, opacity; /* Оптимізація для відеокарти */
+}
+
+
+
+/* Клас, який ми будемо вішати через JS перед видаленням вікна */
+.winbox.wb-closing {
+    animation: winClose 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+}
+
+/* Клас для красивого згортання на таскбар (Minimize) */
+.winbox.wb-hiding {
+    animation: winMinimize 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+}
+
+/* --- Ключові кадри анімацій --- */
+
+/* 1. Поява: Ефект вистрибування з легкою пружиною */
+@keyframes winOpen {
+    0% {
+        opacity: 0;
+        transform: scale(0.88) translateY(30px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* 2. Закриття: М'яке згасання та провалювання вниз */
+@keyframes winClose {
+    0% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.92) translateY(20px);
+    }
+}
+
+/* 3. Згортання: Схлопування у бік таскбару */
+@keyframes winMinimize {
+    0% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.5) translateY(100px);
+    }
+}

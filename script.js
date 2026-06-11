@@ -1,5 +1,5 @@
 setInterval(updateTime, 500);
-// --- ДОДАТКОВИЙ КОД: ІНТЕРНАЦІОНАЛІЗАЦІЯ (i18n) ---
+
 let currentStrings = {};
 let currentLang = 'en';
 let dateLang = "en-US";
@@ -8,20 +8,27 @@ let currentKeyboardLayout = "mac";
 let displayType = "oled";
 let notificationAPI;
 let apps = [];
+let icons = [];
+let hiddenApps = [];
+let allowTelemetry = JSON.parse(localStorage.getItem("allowTelemetry") )|| false;
+let bgClock = JSON.parse(localStorage.getItem('backgroundClock')) ?? true;
+let styles;
+let wbtheme; // Class name
 const devices = [];
 const screens = [];
 window.systemWorkers = []; // Реєстр для resmon
 
+let filesSettings = JSON.parse(localStorage.getItem("config/files")) || { "filesCols": [], "showHidden": true };
+let filesCols = filesSettings.filesCols || [];
+let filesShowHidden = filesSettings.showHidden || false;
 
 const OriginalWorker = window.Worker;
 window.Worker = function(scriptURL, options) {
     const worker = new OriginalWorker(scriptURL, options);
     const workerId = 'worker_' + Math.random().toString(36).substr(2, 9);
-    
-    // Додаємо в реєстр
+
     window.systemWorkers.push({ id: workerId, url: scriptURL, instance: worker });
-    
-    // Видаляємо з реєстру при завершенні (якщо викликано terminate)
+
     const originalTerminate = worker.terminate;
     worker.terminate = function() {
         window.systemWorkers = window.systemWorkers.filter(w => w.id !== workerId);
@@ -44,10 +51,8 @@ window.updateFonts = function(action, fontName) {
         fonts.active = fontName;
     }
 
-    // Sync to storage
     localStorage.setItem("fonts", JSON.stringify(fonts));
-    
-    // Optional: Trigger UI refresh
+
     console.log(`Fonts updated:`, fonts);
   }catch (e){
     console.error(e.message)
@@ -58,11 +63,88 @@ window.updateFonts = function(action, fontName) {
     setupFonts(); 
 };
 
-// Usage in your OS boot sequence:
+function applySystemConfig(iframeElement0) {
+  const windowContainer = document.getElementById(iframeElement0);
+  if (!windowContainer) return console.warn(`Елемент з ID ${iframeElement0} не знадено.`);
+const themeColors = styles; 
+
+  const iframeElement = windowContainer.querySelector("iframe");
+  if (!iframeElement) return console.warn("Всередині контейнера немає тегу <iframe>.");
+
+  const generateCssContent = () => {
+    const activeFont = localStorage.getItem("fonts") 
+      ? JSON.parse(localStorage.getItem("fonts")).active 
+      : "sans-serif";
+
+
+    let cssVariables = '';
+    if (themeColors){
+    for (const [key, value] of Object.entries(themeColors)) {
+      if (value !== undefined && value !== null) {
+        cssVariables += `  ${key}: ${value};\n`;
+      }
+    }
+  }
+
+    let stylesText = `
+      :root {
+        --font: "${activeFont}", sans-serif;
+      ${cssVariables}
+      }
+      *:not([class^="preview-container-"]):not([class^="preview-container-"] *):not([class^="output"]):not([class^="output"] *):not([contenteditable="true"]):not([contenteditable="true"] *) {
+          font-family: var(--font);
+      }
+    `;
+    
+
+    if (window.currentFontBlobUrl) {
+      stylesText = `
+        @font-face {
+          font-family: "${activeFont}";
+          src: url("${window.currentFontBlobUrl}") format("truetype");
+        }
+      ` + stylesText;
+    }
+    return stylesText;
+  };
+
+  try {
+    try {
+      const iframeDoc = iframeElement.contentDocument || iframeElement.contentWindow.document;
+      if (iframeDoc) {
+        let styleTag = iframeDoc.getElementById("infinity-os-injector");
+        if (!styleTag) {
+          styleTag = iframeDoc.createElement("style");
+          styleTag.id = "infinity-os-injector";
+          iframeDoc.head.appendChild(styleTag);
+        }
+        styleTag.textContent = generateCssContent();
+      }
+    } catch (e) {
+      console.error("Не вдалося достукатися до iframe додатка через CORS або ізоляцію:", e);
+    }
+  } catch {}
+
+  iframeElement.addEventListener("load", () => {
+    try {
+      const iframeDoc = iframeElement.contentDocument || iframeElement.contentWindow.document;
+      if (iframeDoc) {
+        let styleTag = iframeDoc.getElementById("infinity-os-font-injector");
+        if (!styleTag) {
+          styleTag = iframeDoc.createElement("style");
+          styleTag.id = "infinity-os-font-injector";
+          iframeDoc.head.appendChild(styleTag);
+        }
+        styleTag.textContent = generateCssContent();
+      }
+    } catch (e) {
+      console.error("Не вдалося достукатися до iframe додатка через CORS або ізоляцію:", e.message);
+    }
+  });
+}
+
 let wm = WinBox;
 
-
-// --- ЛОГІКА КЕРУВАННЯ ПРОЦЕСАМИ ---
 
 function fore(id,type) {
         const winboxElement = document.getElementById(id);
@@ -78,11 +160,11 @@ function kill(id, type) {
     } 
     
     if (type == "worker") {
-        // Знаходимо воркер у масиві за його текстовим ID
+
         const workerEntry = window.systemWorkers.find(w => w.id === id);
         
         if (workerEntry && workerEntry.instance) {
-            // Викликаємо оригінальний або перевизначений terminate
+
             workerEntry.instance.terminate();
             console.log(`[Infinity OS] Worker ${id} killed.`);
         } else {
@@ -92,44 +174,46 @@ function kill(id, type) {
 }
 
 function getScreenDiagonalInches() {
-    // Фізичні пікселі екрану
+
     const widthPx = window.screen.width * window.devicePixelRatio;
     const heightPx = window.screen.height * window.devicePixelRatio;
-    
-    // Спробуємо взяти фізичну щільність пікселів (DPI)
-    // Якщо devicePixelRatio = 1, тоді приблизно 96 dpi на більшості дисплеїв
+
+
     const dpi = 96 * window.devicePixelRatio;
-    
-    // Розмір в дюймах
+
     const widthInches = widthPx / dpi;
     const heightInches = heightPx / dpi;
-    
-    // Діагональ по теоремі Піфагора
+
     const diagonalInches = Math.sqrt(widthInches ** 2 + heightInches ** 2);
     
     return diagonalInches-3.3;
 }
 
 
+
  
 async function buildDevProps() {
+
+  const baseArch = navigator.platform.includes("64") || navigator.userAgent.includes("x86_64") || navigator.userAgent.includes("Win64") ? "x64" : "x86";
+  const defaultChipStr = `${baseArch} (${navigator.hardwareConcurrency || 0} Cores)`;
+
   const devProps = {
     model: _("unknown"),
-    inchRes :getScreenDiagonalInches().toFixed(1) + "-inch",
+    inchRes: getScreenDiagonalInches().toFixed(1) + "-inch",
     relYear: _("unknown"),
-    chip: navigator.platform || _("unknown"),
+    chip: defaultChipStr, // Clean placeholder format
     memory: navigator.deviceMemory ? navigator.deviceMemory + " GB" : "Unknown",
     os: {
       name: "Infinity OS",
-      version: "23052026"
+      version: "10062026" // Hot release!
     },
     deviceIcon: navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches ? "assets/laptop.svg" : "assets/pc.svg"
   };
-const scr = screen;
-scr.type = "screen";
-devices.push(scr)
 
-  // 📱 userAgentData (Chromium-based)
+  const scr = screen;
+  scr.type = "screen";
+  devices.push(scr);
+
   if (navigator.userAgentData) {
     try {
       const ua = await navigator.userAgentData.getHighEntropyValues([
@@ -142,9 +226,13 @@ devices.push(scr)
 
       if (ua.model) devProps.model = ua.model || _("unknown");
 
-      devProps.chip = `${ua.platform} ${ua.architecture || ""} ${ua.bitness || ""}`.trim();
 
-      // приблизний рік релізу (по версії платформи)
+      const arch = ua.architecture ? ua.architecture : "x86";
+      const bitness = ua.bitness ? `${ua.bitness}-bit` : "";
+      const cores = navigator.hardwareConcurrency ? `(${navigator.hardwareConcurrency} Cores)` : "";
+      
+      devProps.chip = `${arch} ${bitness} ${cores}`.replace(/\s+/g, ' ').trim() || defaultChipStr;
+
       if (ua.platformVersion) {
         devProps.relYear = "Platform v" + ua.platformVersion;
       }
@@ -153,21 +241,19 @@ devices.push(scr)
       console.warn("UA entropy blocked:", e);
     }
   } else {
-    // 🧓 fallback
+
     devProps.model = navigator.userAgent;
   }
 
-  // 🖥 CPU cores
   devProps.cores = navigator.hardwareConcurrency || _("unknown");
 
-  // 🎮 GPU (через WebGL)
   try {
     const canvas = document.createElement("canvas");
     const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
     const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
 
     if (debugInfo) {
-      devProps.gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).replaceAll("(", "").replaceAll(")", "").trim()
+      devProps.gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).replaceAll("(", "").replaceAll(")", "").trim();
     } else {
       devProps.gpu = _("unknown");
     }
@@ -177,12 +263,11 @@ devices.push(scr)
 
   return devProps;
 }
-
 let devProps;
 let maxLS;
 
 window.icns = {
-    // --- Іконки програм (динамічні) ---
+
     files: "icons/files.svg",
     toolpointer: "icons/tool-pointer.svg",
     clock: "icons/clock.svg",
@@ -193,7 +278,6 @@ window.icns = {
     tasks: "icons/tasks.svg",
     store: "icons/store.svg",
 
-    // --- Іконки типів файлів (додані з обробника) ---
     textPlain: "icons/application-text.svg",
 	 textRich: "icons/application-rtf.svg",
     imageGeneric: "icons/application-image.svg",
@@ -210,14 +294,12 @@ window.icns = {
     font: "icons/font.svg",
     empty: "icons/application-blank.svg",
     folder: "icons/folder.svg",
-    
-    // Small icons
+
     dialogInfo: 'icons/dialog-info.svg',
     dialogQues: 'icons/dialog-ques.svg',
     dialogErr: 'icons/dialog-err.svg',
     dialogWarn: 'icons/dialog-warn.svg',
-    
-    // Drives
+
     lsDrive: 'icons/drive-ls.svg',
     dbDrive: 'icons/drive-idb.svg',
     usbDrive: 'icons/drive-usb.svg',
@@ -230,30 +312,35 @@ window.sounds = {
   info: new Audio(""),
   question: new Audio("sounds/dialog-confirm.mp3"),
   warn: new Audio(""),
-  driveIn: new Audio("sounds/device-in.mp3"),
-  driveOut: new Audio("sounds/device-out.mp3"),
+  driveIn: new Audio("sounds/in.ogg"),
+  driveOut: new Audio("sounds/out.ogg"),
   notify: new Audio(""),
   logout: new Audio(""),
   
-  async play(aud) { // Додано дефолтне значення гучності
- let audio;
+  async play(aud) {
+    let audio;
     let objectUrl = null;
 
-    if (typeof aud !== "string") {
-      if (!(aud instanceof Blob)) return;
-
+    if (aud instanceof Blob) {
       objectUrl = URL.createObjectURL(aud);
       audio = new Audio(objectUrl);
-    } else {
+    } 
+
+    else if (typeof aud === "string" && aud.startsWith("data:audio")) {
+      audio = new Audio(aud); // Браузер чудово вміє грати "data:audio/wav;base64,..." напряму!
+    } 
+
+    else if (typeof aud === "string") {
       if (!this[aud]) {
         console.error(`Sound "${aud}" not found.`);
         return;
       }
-
       audio = this[aud];
+    } else {
+      return; // Якщо передано щось невідоме
     }
 
-    audio.volume = vol;
+    audio.volume = typeof vol !== "undefined" ? vol : 1;
 
     return new Promise((resolve) => {
       let finished = false;
@@ -282,12 +369,8 @@ window.sounds = {
 
 async function safeShutdown({ restart = false } = {}) {
     console.log("Infinity OS: safe shutdown started");
-    
-    // 1. Звуковий супровід
-    // Використовуємо проміс, щоб почекати завершення звуку або хоча б його початку
-    await sounds.play("logout");
 
-    // 2. Закрити всі вікна WinBox
+
     const winboxes = document.querySelectorAll(".winbox");
     winboxes.forEach(w => {
         try {
@@ -299,20 +382,17 @@ async function safeShutdown({ restart = false } = {}) {
         } catch(e) { console.warn("WinBox close err:", e); }
     });
 
-    // 3. Відмонтувати активний носій (IndexedDB / LocalStorage)
     try {
         if (typeof dbInstances !== 'undefined' && typeof DB_NAME !== 'undefined' && DB_NAME) {
             const driveName = DB_NAME;
-            
-            // Якщо dbInstances[driveName] має метод close (як у IndexedDB)
+
             if (dbInstances[driveName] && typeof dbInstances[driveName].close === "function") {
                 await dbInstances[driveName].close();
             }
 
             console.log("UnMounted:" + driveName);
             delete dbInstances[driveName];
-            
-            // Глобальні змінні (якщо вони не константи)
+
             if (typeof DB_NAME !== 'undefined') DB_NAME = "";
             if (typeof LAST_DB !== 'undefined') LAST_DB = "";
         }
@@ -320,19 +400,16 @@ async function safeShutdown({ restart = false } = {}) {
         console.warn("Unmount error:", e);
     }
 
-    // 4. Невелика затримка для завершення записів/звуку
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // 5. Фінальна дія
     if (restart) {
         console.log("Restarting system...");
         location.reload();
     } else {
         console.log("Shutting down...");
-        // window.close() працює тільки якщо вікно було відкрите через JS (window.open)
+
         window.close();
-        
-        // Резервний варіант: очищення екрана, якщо window.close заблоковано браузером
+
         document.body.innerHTML = "<div style='background:#000;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;'>It is now safe to close your browser.</div>";
     }
 }
@@ -348,12 +425,12 @@ const updateDevices = (e, isConnecting) => {
     const { gamepad } = e;
     dev = gamepad;
     if (isConnecting) {
-        // Додаємо об'єкт геймпада (можна розширити власними властивостями для Infinity OS)
+
                 dev.type = "gamepad";
         devices.push(dev);
 sounds.play("driveIn")
     } else {
-        // Видаляємо за індексом, щоб уникнути помилок з однаковими моделями
+
         const index = devices.findIndex(d => d.index === gamepad.index);
         if (index !== -1) {
             sounds.play("driveOut")
@@ -361,7 +438,7 @@ sounds.play("driveIn")
         }
     }
     }else{
-        //...
+
     }
     new Notification(isConnecting ? _("device_connected"):_("device_disconnected"), {body: dev.type || "" , silent: true})
 };
@@ -370,16 +447,11 @@ window.addEventListener("gamepadconnected", (e) => updateDevices(e, true));
 window.addEventListener("gamepaddisconnected", (e) => updateDevices(e, false));
 
 
-
-
-// THEMING AND STYLING ---
-
 class ThemeParser {
     constructor() {
         this.colors = {};
     }
 
-    // Конвертація "R G B" (Windows) у "rgb(R, G, B)" або HEX
     winColorToCSS(winColor) {
         if (!winColor) return null;
         const parts = winColor.trim().split(/\s+/);
@@ -390,23 +462,21 @@ class ThemeParser {
     }
 
     parse(fileContent) {
-    // Розбиваємо лише за символом нового рядка
+
     const lines = fileContent.split(/\r?\n/);
     let currentSection = "";
     const data = {};
 
     lines.forEach(line => {
         line = line.trim();
-        
-        // Пропускаємо порожні рядки та коментарі (INI-style)
+
         if (!line || line.startsWith(';') || line.startsWith('#')) return;
 
-        // Визначаємо секцію: [Section Name]
         if (line.startsWith('[') && line.endsWith(']')) {
             currentSection = line.toLowerCase(); // Залишаємо дужки для сумісності з вашим mapToInfinityVariables
             data[currentSection] = {};
         } 
-        // Визначаємо ключ=значення
+
         else if (line.includes('=') && currentSection) {
             const separatorIndex = line.indexOf('=');
             const key = line.substring(0, separatorIndex).trim();
@@ -425,7 +495,7 @@ class ThemeParser {
     };
 }
 parseColorization(hex) {
-    // hex приходить як "0x45409efe"
+
     const raw = hex.replace('0x', '');
     
     const a = parseInt(raw.substring(0, 2), 16); // 45 -> 69
@@ -433,7 +503,6 @@ parseColorization(hex) {
     const g = parseInt(raw.substring(4, 6), 16); // 9e -> 158
     const b = parseInt(raw.substring(6, 8), 16); // fe -> 254
 
-    // Конвертуємо альфа-канал з 0-255 у 0-1
     const alpha = (a / 255).toFixed(2);
 
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -441,36 +510,32 @@ parseColorization(hex) {
 mapToInfinityVariables(data) {
     const cpColors = data['[control panel\\colors]'] || {};
     const vs = data['[visualstyles]'] || {};
-    
-    // 1. Classic Colors & Gradients
+
     const activeTitle = this.winColorToCSS(cpColors['ActiveTitle']) || '#0054e3';
     const gradActiveTitle = this.winColorToCSS(cpColors['GradientActiveTitle']) || activeTitle;
     const inactiveTitle = this.winColorToCSS(cpColors['InactiveTitle']) || '#76a1e8';
     const gradInactiveTitle = this.winColorToCSS(cpColors['GradientInactiveTitle']) || inactiveTitle;
 
-    // 2. Modern Colorization (Vista/7/8)
     const colorization = vs['ColorizationColor'] || "";
     let md = 10; // Default radius
     let winActive, winInactive;
 
     if (colorization) {
-        // MODERN MODE: Use the single colorization hex for windows
+
         const cssAccent = this.parseColorization(colorization);
         winActive = cssAccent;
-        
-        // Generate a slightly faded version for inactive modern windows
-        // You can also use a fixed transparency or a slightly desaturated color
+
+
         winInactive = cssAccent.replace(/[\d.]+\)$/g, '0.4)'); 
         
         md = 10; 
     } else {
-        // CLASSIC MODE: Use the gradients from Control Panel
+
         winActive = `linear-gradient(90deg, ${activeTitle} 0%, ${gradActiveTitle} 100%)`;
         winInactive = `linear-gradient(90deg, ${inactiveTitle} 0%, ${gradInactiveTitle} 100%)`;
         md = 0; // Classic themes usually have sharp corners
     }
 
-    // 3. system Basics
 const infoWindow = this.winColorToCSS(cpColors['InfoWindow']);
 const infoText = this.winColorToCSS(cpColors['InfoText']);
 
@@ -486,21 +551,18 @@ const infoText = this.winColorToCSS(cpColors['InfoText']);
 
 
     const colors =  {
-        // The core variables your window manager uses
+
         '--color-win-act': winActive,
         '--color-win-ina': winInactive,
-        
-        // UI Accents
+
         '--accent-color': colorization ? this.parseColorization(colorization) : highlight,
         '--color-selection': highlight,
-        
-        // Surfaces
+
         '--bg-color': windowBg,
         '--bg-panel': colorization ? this.parseColorization(colorization) : windowBg,
         '--bg-body': windowBg,
         '--bg-menu': colorization ? this.parseColorization(colorization) : windowBg,
-        
-        // Buttons & Toolbars
+
         '--toolbar-bg': buttonFace,
 '--button-bg': buttonFace,
     '--button-text': this.winColorToCSS(cpColors['ButtonText']) || '#000',
@@ -508,22 +570,16 @@ const infoText = this.winColorToCSS(cpColors['InfoText']);
     '--button-hilight': this.winColorToCSS(cpColors['ButtonHilight']) || '#fff',
     '--button-shadow': this.winColorToCSS(cpColors['ButtonShadow']) || '#808080',
     '--button-dk-shadow': this.winColorToCSS(cpColors['ButtonDkShadow']) || '#000',
-    
-    // Присвоєння існуючим змінним
+
     '--button-act-bg': this.winColorToCSS(cpColors['ButtonLight']) || '#c0c0c0',
     '--button-border': this.winColorToCSS(cpColors['ButtonShadow']) || '#808080',
     '--button-act-border': this.winColorToCSS(cpColors['ButtonDkShadow']) || '#000',
-        
-        // Typography
+
         '--color-text-primary': windowText,
 
-
-        
-        // Inputs
         '--input-bg': windowBg,
         '--color-input-bg': windowBg,
-        
-        // Effects
+
         '--blur': colorization ? 'blur(10px)' : 'none',
         '--radius-md': md + 'px',
         '--color-win-btn-close': 'rgba(220, 20, 60, 0.6)',
@@ -545,9 +601,9 @@ colors['--color-text-tretiary'] = "#000"
 
 return colors;
 }
-// Додайте це всередину методу parse або як окрему логіку
+
 getName(data) {
-    // 1. Шукаємо в секції [VisualStyles]
+
     const vs = data['[visualstyles]'];
 const thm = data["[Theme]"]
     if (thm && thm['DisplayName']) return thm['DisplayName'];
@@ -564,24 +620,23 @@ const thm = data["[Theme]"]
 
 
 const theme = localStorage.getItem("theme") || null // Link to file here
-let wbtheme; // Class name
+
 
 function loadTheme() {
     const tmp = fs.find(f => f.name == theme);
     if (theme && tmp) {
         const reader = new FileReader();
-        
-        // Додаємо перевірки всередині onload
+
 reader.onload = function(e) {
         const text = reader.result;
  
         const parser = new ThemeParser();
         const result = parser.parse(text); 
 
-        // Перевірка на null/undefined перед використанням
         if (result && result.styles) {
             
             parser.applyTheme(result.styles);
+            styles = result.styles;
 			if (result.name) console.log("THM N: "+result.name)
             
             wbtheme = result.type;
@@ -608,7 +663,6 @@ applyThemeToUI(wbtheme);
     }
 }
 
-// Винесемо це в окрему функцію, щоб не дублювати код
 function applyThemeToUI(name) {
     const safeName = name.replace(/[^\x20-\x7EА-яЁёІіЇїЄє]/g, "").trim();
     
@@ -628,24 +682,24 @@ function applyThemeToUI(name) {
  * @param {HTMLElement} [targetElement=document.body] The root element to search within.
  */
 function replaceTextInElements(searchPattern, replacementString, targetElement = document.body) {
-    // Select all elements that are likely to contain displayable text (excluding scripts, styles, etc.)
-    // and process the target element itself.
+
+
     const allElements = [targetElement, ...targetElement.querySelectorAll("*:not(script):not(noscript):not(style)")];
 
     allElements.forEach(element => {
-        // Iterate through all child nodes of the element
-        // Use `childNodes` and filter for `TEXT_NODE` (nodeType 3)
+
+
         Array.from(element.childNodes)
             .filter(node => node.nodeType === Node.TEXT_NODE && node.nodeValue.trim() !== "")
             .forEach(textNode => {
-                // Perform the replacement on the text content.
-                // Using replaceAll() for string patterns or a global regex (/g flag) 
-                // is recommended to replace all occurrences within a single text node.
+
+
+
                 if (typeof searchPattern === 'string') {
-                    // Use modern replaceAll for simple string replacement.
+
                     textNode.textContent = textNode.textContent.replaceAll(searchPattern, replacementString);
                 } else if (searchPattern instanceof RegExp) {
-                    // Ensure the regex has the global flag for full replacement.
+
                     const globalPattern = new RegExp(searchPattern, searchPattern.flags.includes('g') ? searchPattern.flags : searchPattern.flags + 'g');
                     textNode.textContent = textNode.textContent.replace(globalPattern, replacementString);
                 }
@@ -665,53 +719,20 @@ function setTaskbarConfig(config) {
         taskbar.style.top = 'auto';
     }
 const isTop = config.pos === "top";
-    
-    // 1. Оновлюємо клас для body, щоб змінити top/bottom у CSS
+
     document.body.classList.toggle("taskbar-at-top", isTop);
 }
 
 if (config.size) document.documentElement.style.setProperty('--taskbar-height', config.size+"px");
-    // Збереження в localStorage, щоб після рестарту не скидалося
+
     tbConfig = {...tbConfig, ...config};
-    localStorage.setItem('taskbar-conf', JSON.stringify(tbConfig));
-	if (localStorage.getItem("PanelApplets")){
-	emptyPanel();
-	const elems = JSON.parse(localStorage.getItem("PanelApplets"));
-	elems.forEach(el=>{
-		let rslt;
-		if (el.tag){
-	 rslt = document.createElement(el.tag);
-	rslt.id = el.id;
-		rslt.classList = el.class;
-			if (rslt.innerText){
-		rslt.innerText = el.inner;
-			}else{
-				rslt.src = el.src;
-				
-			}
-		}else{
-			rslt = document.createElement("span");
-			rslt.outerHTML = el.outer;
-		}
-		
-	addPanelItem(rslt)
-	})
-	}
-	
+    localStorage.setItem('taskbar-conf', JSON.stringify(tbConfig));	
 }
 
-// Функція для чистого об'єднання без дублікатів за ID
-function syncApplets(static1, active2) {
-    const combined = [...static1, ...active2];
-    
-    // Використовуємо Map, щоб залишити лише унікальні ID
-    const uniqueMap = new Map(combined.map(item => [item.id, item]));
-    
-    return Array.from(uniqueMap.values());
-}
+
 
 const FILE_TYPES = {
-    // Текстові
+
     'txt':  { mime: 'text/plain', icon: icns.textPlain },
     'css':  { mime: 'text/css', icon: icns.textCss },
     'html': { mime: 'text/html', icon: icns.textHtml },
@@ -723,7 +744,6 @@ const FILE_TYPES = {
     'csv':  { mime: 'text/csv', icon: icns.textCsv },
     'docx': { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', icon: icns.textRich },
 
-    // Зображення
     'jpg':  { mime: 'image/jpeg', icon: icns.imageGeneric },
     'jpeg': { mime: 'image/jpeg', icon: icns.imageGeneric },
     'png':  { mime: 'image/png', icon: icns.imageGeneric },
@@ -731,14 +751,12 @@ const FILE_TYPES = {
     'svg':  { mime: 'image/svg+xml', icon: icns.imageGeneric },
     'webp': { mime: 'image/webp', icon: icns.imageGeneric },
 
-    // Медіа
     'mp3':  { mime: 'audio/mpeg', icon: icns.audioGeneric },
     'wav':  { mime: 'audio/wav', icon: icns.audioGeneric },
     'ogg':  { mime: 'audio/ogg', icon: icns.audioGeneric },
     'mp4':  { mime: 'video/mp4', icon: icns.videoMp4 },
     'webm': { mime: 'video/webm', icon: icns.videoMp4 },
 
-    // Системні та архіви
     'pdf':  { mime: 'application/pdf', icon: icns.pdf },
     'ttf':  { mime: 'font/ttf', icon: icns.font },
     'zip':  { mime: 'application/zip', icon: icns.archive },
@@ -750,7 +768,6 @@ const FILE_TYPES = {
 
 
 let fonts;
-let applets = JSON.parse(localStorage.getItem("applets")) || [];
 function getFileTypes(){return FILE_TYPES;}
 function getMasterVolume(){return vol;}
 function getShortcuts(){return currentKeyboardLayout;   }
@@ -762,85 +779,10 @@ function getDB(){return DB_NAME;}
 function getFs(){return fs;}
 function getIcns(){return icns;}
 function getFonts(){return fonts;}
-function getApplets() {return applets;}
+function getWM(){return wm;}
+function getWBtheme(){return wbtheme;}
 
-function removePanelItem(id) {
-    const el = document.getElementById(id);
-    if (el) {
-        // 1. Видаляємо з DOM
-        el.remove();
-        console.log(`Елемент ${id} видалено з панелі.`);
 
-        // 2. Оновлюємо внутрішні масиви
-localStorage.setItem("PanelApplets",JSON.stringify(getPanelApplets()))
-        
-        return true;
-    }
-    console.error(`Елемент з ID ${id} не знайдено.`);
-    return false;
-}
-
-function addPanelItem(el, pos){
-	if (!pos) pos = el.pos;
-	if (pos == 0){
-document.getElementById("taskbar").appendChild(el);
-	}else{
-document.getElementById("taskbar-right").appendChild(el);
-	}
-localStorage.setItem("PanelApplets",JSON.stringify(getPanelApplets()))
-}
-
-function emptyPanel(){
-	document.getElementById("taskbar").innerHTML = '<div id="taskbar-right" class="right"></div>';
-	
-}
-
-function getPanelApplets() {
-    let panelApplets = [];
-    const taskbar = document.getElementById("taskbar");
-    if (!taskbar) return [];
-
-    // Перетворюємо в масив, щоб уникнути помилок ітерації
-    const currPanelItems = Array.from(taskbar.children);
-
-    currPanelItems.forEach((child, index) => {
-        if (child.classList.contains("right")) {
-            const indicators = Array.from(child.children);
-            indicators.forEach((ind, indIndex) => {
-                if (ind.id || ind.classList.length > 0) {
-                    panelApplets.push({
-                        // Використовуємо індекс для унікальності, якщо немає ID
-						tag: ind.tagName,
-                        id: ind.id || null,
-						itter: ind.id || ind.classList[0],
-                        name: ind.id || ind.classList[0] || "indicator",
-                        class: ind.classList,
-                        outer: ind.outerHTML, // fallback if nothing found
-						inner: ind.innerText,
-						src: ind.src,
-						pos: 1
-                    });
-                }
-            });
-        } else {
-            panelApplets.push({
-                // Тут теж важливо не повертати null
-				tag: child.tagName,
-                id: child.id || null,
-				itter: child.id || child.classList[0],
-                name: child.id || `panel_item_${index}`,
-                class: child.classList,
-                outer: child.outerHTML, // fallback if nothing found	
-				inner: child.innerText,
-				src: child.src,
-				pos: 0
-            });
-        }
-    });
-
-    applets = syncApplets(applets, panelApplets);
-    return panelApplets;
-}
 function chShortcuts(layout){
     currentKeyboardLayout = layout;
     if (layout== "win"){
@@ -877,8 +819,40 @@ function _(key) {
     return langs[currentLang][key] || key;
 }
 
+document.addEventListener("DOMContentLoaded", () => {
 
-// --- Модифікована функція addIcon ---
+    document.getElementById("delete_item_btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (obj && obj.parentNode) {
+            obj.style.transition = "all 0.2s ease-out";
+            obj.style.opacity = "0";
+            obj.style.transform = "scale(0.8)";
+            setTimeout(() => {
+                obj.remove();
+                obj = null; // Очищаємо посилання
+            }, 200);
+        }
+        document.getElementById("itemM").style.display = "none";
+    });
+
+    document.getElementById("copy_name").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (obj) {
+            const nameElement = obj.querySelector('p');
+            if (nameElement) {
+                const textToCopy = nameElement.innerText.trim();
+                try {
+                    await navigator.clipboard.writeText(textToCopy);
+                    
+                } catch (err) {
+                    if (typeof prompt !== 'undefined') await prompt("Copy text manually:", textToCopy);
+                }
+            }
+        }
+        document.getElementById("itemM").style.display = "none";
+    });
+});
+
 
 /**
  * Створює значок програми на робочому столі.
@@ -888,105 +862,159 @@ function _(key) {
  * @param {string} onclickLogic - Повний рядок JavaScript для onclick (для передачі в Dock).
  */
  let obj = null;
- 
- 
- 
-function addIcon(nameKey, iconUrl, onclickLogic) { 
+function addIcon(nameKey, iconUrl, onclickLogic, showApp = true) {  
     const desktopApps = document.getElementById("desktopApps") || document.body;
 
-    // 1. Створення контейнера значка
     const appContainer = document.createElement('div');
-    appContainer.style.cssText = "";
-    
-    // 2. Вміст значка (зображення та текст)
+    appContainer.className = 'appIcon';
+
     appContainer.innerHTML = `
         <img src="${iconUrl}" style="width: 32px; height: 32px;" draggable="false">
         <p data-i18n="${nameKey}" style="margin: 0px; color: #fff; text-shadow: 1px 1px 1px rgba(0,0,0,0.5);">${_(nameKey)}</p>
     `;
-appContainer.addEventListener("contextmenu", (e)=>{
-e.preventDefault();
-e.stopPropagation();
-obj = appContainer;
 
-document.querySelectorAll(".menu").forEach(function(item){
-item.style.display="none";
-})
+    appContainer.addEventListener("contextmenu", (e)=>{
+        e.preventDefault(); e.stopPropagation(); obj = appContainer;
+        document.querySelectorAll(".menu").forEach(i => i.style.display="none");
+        document.getElementById("itemM").querySelectorAll("li > p").forEach(i => i.innerText = _(i.innerText));
+        document.getElementById("itemM").style.display = "block";
+        document.getElementById("itemM").style.left = e.clientX+"px";
+        document.getElementById("itemM").style.top = e.clientY+"px";
+    });
 
-document.getElementById("itemM").querySelectorAll("li > p").forEach(function(item) {item.innerText = _(item.innerText);})
-document.getElementById("itemM").style.display = "block";
-document.getElementById("itemM").style.left = e.clientX+"px";
-document.getElementById("itemM").style.top = e.clientY+"px";
-})
-
-document.getElementById("copy_name").addEventListener("click", (e) => {
-    navigator.clipboard.writeText(obj.innerText);
-})
-
-
-document.getElementById("delete_item_btn").addEventListener("click", (e) => {
-    try{
-        obj.remove()
-    }catch{
-        
-    }
-    obj = null;
-    
-})
-
-document.addEventListener("keypress", (e) => {
-    try{
-        if (e.key === "Delete"){
-        obj.remove()
-        }
-    }catch{
-        
-    }
-    obj = null;
-    
-})
-
-    // 3. ПРИКРІПЛЕННЯ ДІЇ (WinBox) та Drag & Drop
     appContainer.setAttribute('draggable', 'true');
+    appContainer.setAttribute('title', _(nameKey)); // Надійно пишемо в атрибут DOM
+
     appContainer.onclick = onclickLogic;
-    //appContainer.ondrag =  handleDragStart(event);
-    appContainer.setAttribute('data-icon-url', iconUrl); // Для ідентифікації програми
 
-// Виконуємо onclickLogic і додаємо логіку відстеження
-const logicStr = onclickLogic.toString();
+    const logicStr = onclickLogic.toString();
 
-if (logicStr.includes("url:")) {
-    const urlMatch = logicStr.match(/url:\s*["']([^"']+)["']/);
-    
-    if (urlMatch && urlMatch[1]) {
-        const appUrl = urlMatch[1];
+    if (logicStr.match(/url:\s*["']([^"']+)["']/)) {
+        const urlMatch = logicStr.match(/url:\s*["']([^"']+)["']/);
+        
+        if (urlMatch && urlMatch[1]) {
+            const appUrl = urlMatch[1];
 
-        // Допоміжна функція для парсингу параметрів WinBox
-        const getVal = (key) => {
-            const m = logicStr.match(new RegExp(key + ':\\s*["\']([^"\']+)["\']'));
-            return m ? m[1] : undefined;
-        };
+            const getVal = (key) => {
+                const arrayMatch = logicStr.match(new RegExp(key + ':\\s*\\[([^\\]]+)\\]'));
+                if (arrayMatch && arrayMatch[1]) {
+                    return arrayMatch[1].split(',').map(s => s.replace(/["']/g, '').trim());
+                }
+                const m = logicStr.match(new RegExp(key + ':\\s*["\']?([^"\'\\s,}]+)["\']?'));
+                return m ? m[1] : undefined;
+            };
 
-        // Витягуємо всі розміри та обмеження
-        const appData = {
-            name: nameKey,
-            icon: iconUrl,
-            url: appUrl,
-            w:   getVal("width"),
-            h:   getVal("height"),
-            miw: getVal("minwidth"),
-            mih: getVal("minheight"),
-            maw: getVal("maxwidth"),
-            mah: getVal("maxheight")
-        };
+            const appData = {
+                name: nameKey,
+                icon: iconUrl,
+                url: appUrl,
+                w:    getVal("width"),
+                h:    getVal("height"),
+                miw: getVal("minwidth"),
+                mih: getVal("minheight"),
+                maw: getVal("maxwidth"),
+                mah: getVal("maxheight"),
+                class: getVal("class")
+            };
 
-        // Додаємо в реєстр (упевніться, що addApp не створює дублікатів)
+            if (showApp) addApp(appData);
+        }
+    } else {
+        const appData = { name: nameKey, icon: iconUrl };
+
+
+    // Видаляємо "function() {", "() => {" або "async () => {" з початку рядка, а також зайві пробіли й переноси
+    const bodyStart = logicStr
+        .replace(/^(async\s+)?(function\s*\w*\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>\s*\{?)/, '')
+        .trim();
+
+    if (showApp && (bodyStart.startsWith("new wm(") || bodyStart.startsWith("if (document.querySelector("))) {
         addApp(appData);
     }
-}
+    }
+    icons.push({name:nameKey, icon:iconUrl, onclick: onclickLogic})
 
-        // 4. Додавання на робочий стіл
     desktopApps.appendChild(appContainer);
 }
+
+async function openApp(targ) {
+
+    if (typeof targ === "string" || !targ.url) {
+        
+        if (icons) {
+            const expectedName = typeof targ === "string" ? targ : _(targ.name);
+
+            const physicalIcon = Array.from(icons).find(icon => 
+                icon.name === expectedName
+            );
+
+           
+
+            if (physicalIcon && physicalIcon.onclick) {
+                const logicStr = physicalIcon.onclick.toString();
+
+                const braceIndex = logicStr.indexOf('{');
+                const arrowIndex = logicStr.indexOf('=>');
+                const cutIndex = braceIndex !== -1 ? braceIndex + 1 : (arrowIndex !== -1 ? arrowIndex + 2 : 0);
+                
+                const bodyStart = logicStr.substring(cutIndex).trim();
+
+                if (bodyStart.startsWith("new wm(") || 
+                    bodyStart.startsWith("if (document.querySelector(") || 
+                    bodyStart.includes("onclickLogic(event)")) { 
+                    
+                    
+                    physicalIcon.onclick(); 
+                    return true; 
+                }
+            }
+        }
+    }
+
+    const beforeDB = DB_NAME;
+    let app = typeof targ == "string" ? getApps().find(a => a.name == targ) : targ;
+
+    if (!app) {
+        console.error("App not found:", (typeof targ == "string" ? targ : targ.name));
+        return; 
+    }
+
+    if (app.url.startsWith("apps/") && !folderExists("apps")) {
+        new wm(_(app.name), {
+            x: "center", y: "center",
+            class: app.class.map(c => c === "wbtheme" ? wbtheme : c).join(" ") || wbtheme + " no-full",
+            url: app.url,
+            icon: app.icon,
+            minwidth: app.miw, minheight: app.mih,
+            width: app.w, height: app.h,
+            maxwidth: app.maw, maxheight: app.mah,
+            oncreate: function() {
+                applySystemConfig(this.id);
+            }
+        });
+    } else {
+        try {
+            if (DB_NAME != startupDisk) {
+                DB_NAME = startupDisk;
+                idbWrapper.db = null;
+                await idbWrapper.openDB();
+                await loadFsFromDB();
+                console.log(beforeDB + " -> " + DB_NAME);
+            }
+
+            await Openf(null, null, getMimeType(app.url), app.url, startupDisk);
+        } finally {
+            if (DB_NAME == startupDisk && beforeDB != startupDisk) {
+                console.log(beforeDB + " <- " + DB_NAME);
+                DB_NAME = beforeDB;
+                idbWrapper.db = null;
+                await idbWrapper.openDB();
+                await loadFsFromDB();
+            }
+        }
+    }
+}
+
 
 
 function addApp(app){
@@ -996,7 +1024,7 @@ function addApp(app){
 }
 
 function folderExists(path) {
-    // Додаємо слеш в кінець, щоб папка "app" не збігалася з файлом "apple.js"
+
     const folderPath = path.endsWith('/') ? path : path + '/';
     
     return fs.some(file => file.name.startsWith(folderPath));
@@ -1006,21 +1034,14 @@ function folderExists(path) {
 
 function openMenu(event) {
     const menu0 = document.getElementById("appmenu");
-    
-        // 5. Показ меню
+
     document.querySelector("#sysmenu").style.display = document.querySelector("#sysmenu").style.display  === 'none' ? 'block' : 'none';
 
-    
-    
-    // 1. Очищення меню (Критично! Без цього кнопки будуть дублюватися)
     menu0.innerHTML = "";
-    
-    // 2. Позиціонування відносно елемента, на який клікнули
+
     const rect = sysmenu.getBoundingClientRect();
-    // Використовуємо rect.top - висота_меню (приблизно 250px для списку)
-    
-    
-    // 3. Динамічне створення списку програм
+
+
     apps.forEach(app => {
         const btn = document.createElement("button");
         btn.style.display = "flex";
@@ -1033,18 +1054,13 @@ function openMenu(event) {
         ico.style.width = "24px"; // 24-32px оптимально для меню
         ico.style.marginRight = "10px";
 
-        ico.src = app.icon;
+        ico.src = app.icon || "";
 
         
         const title = document.createElement("p");
         title.style.margin = "0";
         title.innerText = _(app.name);
-        
-        // 4. Виправлена логіка запуску (відкриваємо лише локальні шляхи)
-        // Умова: якщо шлях НЕ починається з http ТА НЕ починається з /
-        
-            
-        
+
             btn.onclick = () => {
             openApp(app)
             }
@@ -1054,15 +1070,11 @@ function openMenu(event) {
         btn.appendChild(title);
         menu0.appendChild(btn);
         
-    });
-
-
-
-    
+    });  
 }
 
 function handleInspectScreen(targetSelector) {
-    // Визначаємо корінь сканування (конкретне вікно або весь екран)
+
     const rootElement = targetSelector 
         ? document.querySelector(targetSelector) 
         : (document.querySelector('.workspace') || document.body);
@@ -1073,19 +1085,16 @@ function handleInspectScreen(targetSelector) {
 
     const screenDump = [];
 
-    // Рекурсивна функція обходу дерева елементів
     function traverseDOM(element) {
-        // Пропускаємо системні скрипти, стилі та сам фрейм чату ШІ, щоб він не дивився сам на себе
+
         if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(element.tagName)) return;
 
         const style = window.getComputedStyle(element);
-        
-        // Якщо елемент повністю прихований, ШІ його не бачить
+
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
             return;
         }
 
-        // Отримуємо чистий текст без тексту дочірніх елементів
         let directText = "";
         for (let node of element.childNodes) {
             if (node.nodeType === Node.TEXT_NODE) {
@@ -1093,7 +1102,6 @@ function handleInspectScreen(targetSelector) {
             }
         }
 
-        // Перевіряємо, чи елемент несе корисне візуальне навантаження
         const hasClass = element.className && typeof element.className === 'string' && element.className.trim() !== "";
         const hasId = element.id !== "";
         const isInteractive = ['BUTTON', 'INPUT', 'TEXTAREA', 'A', 'H1', 'H2', 'H3'].includes(element.tagName);
@@ -1105,18 +1113,16 @@ function handleInspectScreen(targetSelector) {
                 class: element.className || undefined,
                 styleDisplay: style.display,
                 innerText: directText || undefined,
-                // Для полів вводу (наприклад, у твоїй Agenda чи сторі) повертаємо їхній поточний вміст
+
                 value: (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') ? element.value : undefined
             });
         }
 
-        // Йдемо вглиб по дереву
         for (let i = 0; i < element.children.length; i++) {
             traverseDOM(element.children[i]);
         }
     }
 
-    // Запускаємо сканування
     traverseDOM(rootElement);
 
    
@@ -1125,61 +1131,13 @@ function handleInspectScreen(targetSelector) {
 }
 
 
-async function openApp(targ) {
-    const beforeDB = DB_NAME;
-    
-    // Оголошуємо через let локально, щоб не засмічувати window.app
-    let app = typeof targ == "string" ? getApps().find(a => a.name == targ) : targ;
 
-    // Якщо додатка немає — логуємо і ПЕРЕРИВАЄМО функцію через return
-    if (!app) {
-        console.error("App not found:", (typeof targ == "string" ? targ : targ.name));
-        return; 
-    }
-
-    if (app.url.startsWith("apps/") && !folderExists("apps")) {
-        // Категорія RAM-додатків: запускаються миттєво, диск не чіпаємо взагалі!
-        new wm(_(app.name), {
-            x: "center", y: "center",
-            class: wbtheme + " no-full",
-            url: app.url,
-            icon: app.icon,
-            minwidth: app.miw, minheight: app.mih,
-            width: app.w, height: app.h,
-            maxwidth: app.maw, maxheight: app.mah
-        });
-    } else {
-        try {
-        // Категорія дискових файлів: ось тут монтування дійсно необхідне
-        if (DB_NAME != startupDisk) {
-            DB_NAME = startupDisk;
-            idbWrapper.db = null;
-            await idbWrapper.openDB();
-            await loadFsFromDB();
-            console.log(beforeDB + " -> " + DB_NAME);
-        }
-
-        // Чекаємо повного зчитування файлу з диска
-        await Openf(null, null, getMimeType(app.url), app.url, startupDisk);
-}finally{
-        // Повертаємо дата-драйв на місце користувачу
-        if (DB_NAME == startupDisk && beforeDB != startupDisk) {
-            console.log(beforeDB + " <- " + DB_NAME);
-            DB_NAME = beforeDB;
-            idbWrapper.db = null;
-            await idbWrapper.openDB();
-            await loadFsFromDB();
-            
-        }
-    }
-}
-}
 
 function getApps(){
     return apps;
     
 }
-// --- НОВА КОНФІГУРАЦІЯ IDB ---
+
 let DB_NAME = 'Infinity_OS_FS';
 if (localStorage.getItem("startup_disk")){
     DB_NAME = localStorage.getItem("startup_disk");
@@ -1190,7 +1148,7 @@ if (localStorage.getItem("startup_disk")){
 const STORE_NAME = 'FileObjects';
 let LAST_DB = "";
 const startupDisk = localStorage.getItem("startup_disk");
-//indexedDB.deleteDatabase(DB_NAME);
+
 
 /**
  * Клас-обгортка для роботи з IndexedDB.
@@ -1211,23 +1169,25 @@ class IDBWrapper {
                 resolve(this.db);
                 return;
             }
-            
-            // Версія 1: Створює сховище FileObjects
+
             fs = [];
             const request = indexedDB.open(DB_NAME, 1);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    // Ключ - це шлях до файлу (name), що робить пошук швидким
+
                     db.createObjectStore(STORE_NAME, { keyPath: 'name' }); 
                 }
             };
 
             request.onsuccess = (event) => {
-                //console.log("Mounted:"+event.target.result.name + " "+ DB_NAME+ ":"+event.target.result.name)
+console.log("LAST_DB - "+LAST_DB)
+console.log("DB_NAME - "+DB_NAME)
                 if (LAST_DB != event.target.result.name || DB_NAME == ""){
                     sounds.play("driveIn");
+                }else{
+                  console.warn("Ignore play")
                 }
                 LAST_DB = event.target.result.name;
                 this.db = event.target.result;
@@ -1252,11 +1212,10 @@ class IDBWrapper {
     async saveFile(fileObject) {
         const db = await this.openDB();
         return new Promise((resolve, reject) => {
-            // Транзакція для запису
+
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
-            
-            // put() - вставляє або оновлює
+
             const request = store.put(fileObject);
 
             request.onsuccess = () => resolve();
@@ -1292,8 +1251,7 @@ class IDBWrapper {
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
-            
-            // getAll() - повертає всі об'єкти
+
             const request = store.getAll(); 
 
             request.onsuccess = (event) => resolve(event.target.result);
@@ -1302,15 +1260,8 @@ class IDBWrapper {
     }
 }
 
-
-
-// Глобальний екземпляр обгортки IDB
 const idbWrapper = new IDBWrapper();
 
-
-
-
-// Глобальний масив файлів. Починаємо з порожнього масиву.
 let fs = [];
 let dbInstances = {}
 
@@ -1321,28 +1272,25 @@ let dbInstances = {}
  */
 function isDbClosed(dbName) {
     const db = dbInstances[dbName];
-    
-    // Якщо її взагалі немає в реєстрі — вона точно закрита/не відкривалася
+
     if (!db) return true; 
 
     try {
-        // Пробуємо створити порожню транзакцію над твоїм схожищем
-        // Якщо база закрита, цей рядок викличе виключення (Exception)
+
+
         db.transaction([STORE_NAME], 'readonly');
         
         return false; // Транзакція успішна -> база ВІДКРИТА
     } catch (error) {
-        // Якщо зловили InvalidStateError — базу було закрито через db.close()
+
         if (error.name === 'InvalidStateError' || error.message.includes('closed')) {
             return true; 
         }
-        // Будь-яка інша помилка (наприклад, сховища не існує) означає, що база жива, але є проблема з конфігом
+
         return false; 
     }
 }
 
-
-// --- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ FS (ЗАЛИШЕНІ) ---
 
 /**
  * Допоміжна функція для перетворення Data URL (base64) на Blob.
@@ -1387,19 +1335,19 @@ function serializeFile(file) {
                 name: file.name,
                 type: file.type,
                 lastModified: file.lastModified,
-                // Content - Data URL або сирий текст (для IndexedDB)
+
                 content: e.target.result
             });
         };
 
         if (fileType.startsWith("text/")) {
-            // Читаємо як текст
+
             reader.readAsText(file);
         } else if (fileType.startsWith("image/") || fileType.startsWith("audio/") || fileType.startsWith("video/")) {
-            // Читаємо як Data URL (base64)
+
             reader.readAsDataURL(file);
         } else {
-            // Для інших (zip, exe, etc.) не зберігаємо вміст
+
             
             reader.readAsDataURL(file);
             
@@ -1407,7 +1355,6 @@ function serializeFile(file) {
     });
 }
 
-// --- НОВІ АСИНХРОННІ ФУНКЦІЇ ЗБЕРЕЖЕННЯ/ЗАВАНТАЖЕННЯ ---
 
 /**
  * Зберігає або оновлює один файл у IndexedDB.
@@ -1416,11 +1363,11 @@ function serializeFile(file) {
 async function saveFileToDB(file) {
     
      if (!file instanceof Blob && !(file instanceof File)) return false;
-    // 1. Серіалізуємо файл
+
     const fileObjectToSave = await serializeFile(file);
 
     try {
-        // 2. Зберігаємо його в IndexedDB
+
         await idbWrapper.saveFile(fileObjectToSave);
         
         return true;
@@ -1435,43 +1382,41 @@ async function saveFileToDB(file) {
  * Асинхронно завантажує файли з IndexedDB на початку роботи.
  */
 async function loadFsFromDB() {
-    //console.log("Loading file system from IndexedDB...");
+
     
     try {
-        // 1. Завантажуємо всі файли-об'єкти з бази
+
         const savedFileObjects = await idbWrapper.loadAllFiles(); 
         
         if (savedFileObjects && savedFileObjects.length > 0) {
-            //console.log(`Found ${savedFileObjects.length} items in IndexedDB.`);
+
             
             fs = savedFileObjects.map(item => {
                 let blob;
                 
                 if (item.type.startsWith("text/")) {
-                    // Текстовий вміст
+
                     blob = new Blob([item.content], { type: item.type});
                 } else if (item.content.startsWith('data:')) {
-                    // Вміст Data URL (base64)
+
                     blob = dataURLtoBlob(item.content); 
                 } else {
-                    // Інші бінарні файли (якщо вміст не було змінено)
+
                     blob = new Blob([], { type: item.type});
                 }
 
-                // Створення нового File об'єкта
                 return new File([blob], item.name, { type: item.type, lastModified: item.lastModified });
             });
             
             
         } else {
             console.log("IndexedDB is empty or not yet created. Initializing empty FS.");
-            // Перевірка на LocalStorage (МІГРАЦІЯ ОДНОРАЗОВА)
+
             const savedFs = localStorage.getItem('infinity_os_fs');
             if (savedFs) {
                  console.log("Found legacy FS in Local Storage. Attempting migration...");
                  const deserializedFs = JSON.parse(savedFs);
-                 
-                 // Конвертуємо старий формат у новий
+
                  fs = deserializedFs.map(item => {
                     if (item.content) {
                         let blob;
@@ -1486,14 +1431,13 @@ async function loadFsFromDB() {
                     }
                     return new File([], item.name, { type: item.type,lastModified: item.lastModified });
                  });
-                 
-                 // Зберігаємо кожен файл у нову базу (якщо fs не порожній)
+
                  if (fs.length > 0) {
                      console.log("Migrating files to IndexedDB...");
                      for (const file of fs) {
                          await saveFileToDB(file);
                      }
-                     // Очищаємо LocalStorage після успішної міграції
+
                      localStorage.removeItem('infinity_os_fs');
                      console.log("Legacy LocalStorage FS successfully migrated and cleared.");
                  }
@@ -1519,36 +1463,30 @@ async function loadFsFromDB() {
  * Застосовує переклади до статичних елементів DOM, позначених data-i18n.
  */
 function applyTranslationsToDOM() {
-    // 1. Оновлення статичних елементів
+
     document.querySelectorAll('[data-i18n]').forEach(element => {
         const key = element.getAttribute('data-i18n');
         element.textContent = _(key);
     });
-    
-    // 2. Оновлення заголовків відкритих WinBox
-    //updateOpenWindowsTitle(); 
+
+
 }
 
-
-// ----------------------------------------------------------------
 
 
 function loadLanguage(lang = null, dlang = null) {
   try {
-    // 1. Зчитуємо дані
+
     if (!lang) lang = localStorage.getItem("locale");
     if (!dlang) dlang = localStorage.getItem("dlocale");
 
-    // 2. Первинний fallback, якщо в сховищі або аргументах порожньо
     if (!lang) lang = "en";
     if (!dlang) dlang = "en-US";
 
-    // 3. Перевіряємо наявність мови в об'єкті
     if (!langs[lang]) {
       throw new Error(`Language "${lang}" not found in dictionary.`);
     }
 
-    // 4. Якщо мова є — застосовуємо її
     currentStrings = langs[lang];
     currentLang = lang;
     dateLang = dlang;
@@ -1556,7 +1494,6 @@ function loadLanguage(lang = null, dlang = null) {
   } catch (error) {
     console.error("Error loading language, rolling back to English:", error);
 
-    // Аварійний fallback: якщо впала навіть англійська, захищаємо від крашу
     const fallbackLang = (lang !== "en" && langs["en"]) ? "en" : lang;
     
     currentStrings = langs[fallbackLang] || {};
@@ -1564,7 +1501,6 @@ function loadLanguage(lang = null, dlang = null) {
     dateLang = (lang !== "en") ? "en-US" : dlang;
   }
 
-  // 5. Гарантований DOM-апдейт та ОДНОРАЗОВЕ збереження чистих даних
   applyTranslationsToDOM();
   
   localStorage.setItem("locale", currentLang);
@@ -1583,11 +1519,17 @@ function loadLanguage(lang = null, dlang = null) {
  */
 function loadBackground() {
     return new Promise(resolve => {
+      
+      if (bgClock == true){
+        document.getElementById("desktop-fore").style.display = "flex"
+      }else{
+        document.getElementById("desktop-fore").style.display = "none"
+      }
         const backgroundFileName = localStorage.getItem('infinity_os_background_file');
         
         if (backgroundFileName) {
-            // Знаходимо File об'єкт у глобальному масиві fs
-            // Припускаємо, що масив fs доступний глобально
+
+
             const backgroundFile = typeof fs !== 'undefined' ? fs.find(item => item.name === backgroundFileName) : null;
             
             if (backgroundFile && backgroundFile instanceof File) {
@@ -1595,7 +1537,7 @@ function loadBackground() {
                 
                 reader.onload = function(e) {
                     const dataUrl = e.target.result;
-                    // Встановлення фону: відбувається тут, коли дані готові
+
                     document.body.style.backgroundImage = `url(${dataUrl})`; // Виправлено синтаксис
                     console.log(`Background loaded from Local Storage: ${backgroundFileName}`);
                     
@@ -1608,17 +1550,16 @@ function loadBackground() {
                     resolve(); // <--- КРИТИЧНО: Завершення Promise навіть при помилці
                 };
 
-                // Читаємо File об'єкт, щоб отримати Base64 Data URL
                 reader.readAsDataURL(backgroundFile);
             } else {
-                // Файл не знайдено, очищаємо налаштування
+
                 localStorage.removeItem('infinity_os_background_file');
                 console.log("Saved background file not found, cleared setting.");
                 
                 resolve(); // <--- КРИТИЧНО: Завершення Promise, якщо файл не знайдено
             }
         } else {
-            // Фон не встановлено
+
             console.log("No background configured.");
             
             resolve(); // <--- КРИТИЧНО: Завершення Promise, якщо фон не налаштовано
@@ -1645,7 +1586,7 @@ if (savedLayout) {
 const notify = document.getElementById('notify')
 
 function finishStartup(){
-// КРОК 0: Отримуємо всі додатки
+
 const localApps = fs.filter(a =>
     a.name.endsWith(".js") ||
     a.name.endsWith(".html") ||
@@ -1681,11 +1622,10 @@ localApps.forEach(app => {
 
     }
     let autoload = [];
-    
-    // КРОК 1: Безпечно отримуємо та парсимо список автозавантаження з Local Storage
+
     try {
         const autoloadString = localStorage.getItem('infinity_os_autoload');
-        // КРИТИЧНО: Використовуємо JSON.parse, щоб перетворити рядок на масив
+
         if (autoloadString) {
             autoload = JSON.parse(autoloadString);
         }
@@ -1694,27 +1634,25 @@ localApps.forEach(app => {
         autoload = [];
     }
 
-    // КРОК 2: Виконуємо код файлів зі списку
     if (Array.isArray(autoload)) {
         autoload.forEach(itemName => {
-            // Припускаємо, що масив fs доступний глобально
+
             if (typeof fs === 'undefined') {
                 console.error("Глобальний масив файлової системи 'fs' не знайдено.");
                 return;
             }
 
-            // Знаходимо File об'єкт за іменем (item.name == itemName)
             const autofile = fs.find(file => file.name === itemName);
             
             if (autofile) {
                 const reader = new FileReader();
-                // Виконання вмісту файлу
+
                 try {
 
                     const cont = reader.readAsText(autofile)
                     reader.addEventListener("load", () =>{
-                    // Використовуємо eval() для контенту файлу (autofile.content)
-                    // Якщо ваша властивість називається 'cont', змініть на autofile.cont
+
+
                     eval(reader.result);        
                     })
 
@@ -1729,21 +1667,20 @@ localApps.forEach(app => {
         });
     }
 
-    // КРОК 3: Завершення завантаження
     
     setTimeout(() => {
-        // Ховаємо сплеш-екран
+
         document.getElementById('splash').classList.add("hidden"); 
     }, 500);
-    // Attempt to play startup chime
+
     try{
     sounds.play("startup")
     }catch{
-        // ...
+
     }
     updateBattery()
 }
-// --- ВИКЛИК ЗАВАНТАЖЕННЯ: ПОВИНЕН БУТИ НА ПОЧАТКУ СКРИПТУ ---
+
 
 
 const prg = document.getElementById("loadprg");
@@ -1754,10 +1691,8 @@ function fail(msg) {
 }
 function firstStart(){
 
-
-    // This means that all user settings are currently absent.
     if (!localStorage.getItem("locale") || !localStorage.getItem("dlocale")){
-// OOBE
+
 const oobe_steps = [
     {
         id: 1,
@@ -1772,7 +1707,7 @@ const oobe_steps = [
             </select>`,
         onLoad: () => {
             const select = document.getElementById("languageSelect");
-            // Enable the "Next" button once a language is confirmed or changed
+
             const nextBtn = document.querySelector('.toolbar button');
             nextBtn.disabled = false; 
 
@@ -1799,12 +1734,10 @@ window.oobe_next = () => {
         return;
     }
 
-    // Update UI
     const currentStepData = oobe_steps[curr_oobe_step - 1];
     document.getElementById("oobe_step").innerText = curr_oobe_step + "/" + oobe_steps.length;
     document.getElementById("oobe_cont").innerHTML = currentStepData.lay;
 
-    // RUN THE CODE FOR THIS STEP
     if (typeof currentStepData.onLoad === "function") {
         currentStepData.onLoad();
     }
@@ -1848,19 +1781,20 @@ async function setupFonts() {
   "fangsong"
 ], active: "sans-serif"};
   const active = fonts.active;
-  
-  // Find the file in your FS
+
   const f = getFs().find(f => f.name == active);
   if (!f) return document.body.style.fontFamily = `sans-serif`;
 
-  // Get the data and register it
   const b = await f.arrayBuffer(); // Don't forget to await the buffer if it's a File/Blob
   const font = new FontFace(active, b);
+
+const blob = new Blob([b], { type: "font/ttf" }); // або woff/otf
+window.currentFontBlobUrl = URL.createObjectURL(blob);
 
 
   if (!fonts.installed.includes(active)) {
         fonts.installed.push(active);
-        // Зберігаємо оновлений об'єкт у localStorage
+
         localStorage.setItem("fonts", JSON.stringify(fonts));
         console.log(`Infinity OS: "${active}" added to installed list.`);
     }
@@ -1868,8 +1802,7 @@ async function setupFonts() {
   try {
     const loadedFont = await font.load();
     document.fonts.add(loadedFont);
-    
-    // Apply to body
+
     document.body.style.fontFamily = `"${active}", sans-serif`;
     document.documentElement.style.setProperty("--font", document.body.style.fontFamily);
     
@@ -1880,9 +1813,8 @@ async function setupFonts() {
 }
 
 function getMaxLS(pb, max = 5) {
-    
-    // Орієнтовна стеля localStorage для більшості браузерів (5120 KB)
-    // Вона потрібна, щоб вирахувати поточний відсоток до моменту, поки не вилетить catch
+
+
     const APPROX_MAX_LS = 5120; 
 
     var data = "m";
@@ -1891,26 +1823,23 @@ function getMaxLS(pb, max = 5) {
         try { 
             localStorage.setItem("DATA", data);
             data = data + data;
-            
-            // 1. Рахуємо поточний об'єм усіх даних у localStorage (в KB)
+
             let currentSize = Math.round(JSON.stringify(localStorage).length / 1024);
             console.log(currentSize);
-            // 2. Рахуємо відсоток заповнення (від 0 до 1)
+
             let progressRatio = Math.min(currentSize / APPROX_MAX_LS, 0.99); 
-            
-            // 3. Масштабуємо цей відсоток під ваш системний "max"
+
 
             if (pb) pb.value = Math.round(progressRatio * max);
 
         } catch(e) {
-            // Коли ліміт дійсно досягнуто, виставляємо прогрес-бар рівно на значення max
+
             if (pb) pb.value = max;
             
             let finalSize = (JSON.stringify(localStorage).length).toFixed(2);
             console.log("LIMIT REACHED: (" + i + ") " + finalSize);
             console.log(e);
-            
-            // Очищаємо за собою сміття перед виходом
+
             localStorage.removeItem("DATA");
             
             return finalSize;
@@ -1919,6 +1848,59 @@ function getMaxLS(pb, max = 5) {
     localStorage.removeItem("DATA");
 }
 
+const InfinityUsageTracker = (function() {
+
+    const getTodayKey = () => new Date().toISOString().split('T')[0];
+
+    let stats = JSON.parse(localStorage.getItem('.usageData') || '{}');
+
+    const tick = () => {
+      if (allowTelemetry !== true) return;
+
+        const activeWindow = document.querySelector('.winbox.focus, .winbox.wb-focus');
+        
+        if (activeWindow) {
+
+            const titleEl = activeWindow.querySelector('.wb-title');
+            if (titleEl) {
+                const winTitle = titleEl.textContent.trim();
+                const today = getTodayKey();
+
+                if (!stats[today]) stats[today] = {};
+                if (!stats[today][winTitle]) stats[today][winTitle] = 0;
+
+                stats[today][winTitle] += 1;
+            }
+        }else {
+           const today = getTodayKey();
+
+                if (!stats[today]) stats[today] = {};
+                if (!stats[today][_("desktop")]) stats[today][_("desktop")] = 0;
+
+                stats[today][_("desktop")] += 1;
+        }
+    };
+
+    const save = () => {
+        if (allowTelemetry == true) localStorage.setItem('.usageData', JSON.stringify(stats));
+    };
+
+    return {
+        start: function() {
+
+            setInterval(tick, 1000);
+
+            setInterval(save, 10000);
+
+            window.addEventListener('beforeunload', save);
+        },
+
+        getDailyStats: function(dateStr) {
+            const date = dateStr || getTodayKey();
+            return stats[date] || {};
+        }
+    };
+})();
 
 (async () => {
     try {
@@ -1927,11 +1909,8 @@ function getMaxLS(pb, max = 5) {
         maxLS = await getMaxLS(prg, 5);
         prg.value = 5;
         
-        devProps = await buildDevProps();
-        prg.value = 10;
-        
         await loadFsFromDB();
-        prg.value = 15;
+        prg.value = 10;
         
         await firstStart();
         prg.value = 20;
@@ -1942,11 +1921,14 @@ function getMaxLS(pb, max = 5) {
         await loadLanguage();
         prg.value = 30;
 
-        await setTaskbarConfig(JSON.parse(localStorage.getItem('taskbar-conf')) || {})
+        devProps = await buildDevProps();
         prg.value = 35;
+
+        await setTaskbarConfig(JSON.parse(localStorage.getItem('taskbar-conf')) || {})
+        prg.value = 40;
         
         await loadTheme();
-        prg.value = 40;
+        prg.value = 45;
 
         await loadBackground();
         prg.value = 50;
@@ -1963,7 +1945,9 @@ function getMaxLS(pb, max = 5) {
         
         notificationAPI = await redefineNotifications()
         prg.value = 90;
-        
+
+        if (allowTelemetry == true) await InfinityUsageTracker.start();
+        prg.value = 95;
         
         await finishStartup();
         prg.value = 100;
@@ -1992,14 +1976,12 @@ function setContentEditableSelection(container, start, length) {
 
     while (node = walk.nextNode()) {
         const nodeLength = node.textContent.length;
-        
-        // Find Start
+
         if (!startNode && charCount + nodeLength > start) {
             startNode = node;
             startOffset = start - charCount;
         }
-        
-        // Find End
+
         if (startNode && charCount + nodeLength >= start + length) {
             endNode = node;
             endOffset = (start + length) - charCount;
@@ -2021,19 +2003,15 @@ function setContentEditableSelection(container, start, length) {
 function rtfToHtml(rtf) {
     if (!rtf) return "";
 
-    // Обов'язково: прибираємо фізичні переноси рядків самого файлу
     let html = rtf.replace(/[\r\n]/g, "");
 
-    // 1. Поля (залишаємо вашу логіку)
     const getMargin = (cmd) => {
         const match = html.match(new RegExp(`\\\\${cmd}(\\d+)`));
         return match ? Math.round(match[1] / 1440 * 96) + "px" : "20px";
     };
 
-    // 2. Unicode
     html = html.replace(/\\u(\d+)\??/g, (_, code) => String.fromCharCode(code));
-    
-    // 3. Шрифти
+
     const fonts = {};
     const fontTableMatch = html.match(/\{\\fonttbl(.*?)\}/s);
     if (fontTableMatch) {
@@ -2041,11 +2019,9 @@ function rtfToHtml(rtf) {
         fontEntries.forEach(match => fonts[match[1]] = match[2].trim());
     }
 
-    // 4. Очищення метаданих (важливо видалити групи цілком)
     html = html.replace(/\{\\fonttbl.*?\}|\{\\colortbl.*?\}|\{\\stylesheet.*?\}|\{\\info.*?\}|\{\\\*\\generator.*?\}/gs, "");
 
-    // 5. Форматування
-    // Використовуємо один прохід для span, щоб не плодити порожні теги
+
     html = html.replace(/\\f(\d+)\s?/g, (_, id) => `</span><span style="font-family:${fonts[id] || 'Arial'}">`);
     html = html.replace(/\\fs(\d+)\s?/g, (_, size) => `</span><span style="font-size:${size / 2}pt">`);
 
@@ -2057,20 +2033,16 @@ function rtfToHtml(rtf) {
         .replace(/\\bullet\s+/g, "• ").trim()
         .replace(/\\par\s?/g, "<br>").trim(); // Додано опціональний пробіл після \par
 
-    // Вирівнювання
     html = html.replace(/\\(qc|qr|qj)\s+(.*?)(?=\\par|\\ql|\\qc|\\qr|\\qj|$)/g, (match, cmd, text) => {
         const align = {qc:'center', qr:'right', qj:'justify'}[cmd];
         return `<div style="text-align:${align}">${text}</div>`;
     });
 
-    // 6. ФІНАЛЬНЕ ОЧИЩЕННЯ (найважливіше)
-    // Видаляємо всі команди, що залишилися, разом із пробілом після них
+
     html = html.replace(/\\[a-z0-9-]+(\s|(?=[\\{}]))/gi, "").trim();
-    
-    // Видаляємо групи {}
+
     html = html.replace(/[{}]/g, "").trim();
 
-    // Прибираємо можливі подвійні пробіли, що виникли після видалення команд
     html = html.replace(/\s\s+/g, ' ').trim();
 
     return html.trim();
@@ -2078,7 +2050,7 @@ function rtfToHtml(rtf) {
 
 function htmlToRtf(html) {
     let content = html
-        // 1. Спочатку замінюємо теги на RTF-коди
+
         .replace(/<(b|strong)>(.*?)<\/\1>/gi, "\\b $2\\b0 ")
         .replace(/<(i|em)>(.*?)<\/\1>/gi, "\\i $2\\i0 ")
         .replace(/<u>(.*?)<\/u>/gi, "\\ul $1\\ul0 ")
@@ -2086,21 +2058,18 @@ function htmlToRtf(html) {
           .replace(/<div[^>]+style="text-align:\s*center;?"[^>]*>(.*?)<\/div>/gi, "\\qc $1\\ql ")
       .replace(/<div[^>]+style="text-align:\s*right;?"[^>]*>(.*?)<\/div>/gi, "\\qr $1\\ql ")
       .replace(/<div[^>]+style="text-align:\s*justify;?"[^>]*>(.*?)<\/div>/gi, "\\qj $1\\ql ")
-      
-      // 2. Списки (Lists)
+
       .replace(/<li>(.*?)<\/li>/gi, "\\bullet  $1\\par ")
 
-        // 2. Вирівнювання (якщо додасте кнопки)
         .replace(/<div style="text-align:\s*center;?">(.*?)<\/div>/gi, "\\qc $1\\ql ")
         .replace(/<div style="text-align:\s*right;?">(.*?)<\/div>/gi, "\\qr $1\\ql ")
-        // 3. Переноси рядків
+
         .replace(/<br\s*\/?>/gi, "\\par ")
         .replace(/<p>(.*?)<\/p>/gi, "\\par $1 ")
         .replace(/<div>(.*?)<\/div>/gi, "\\par $1 ")
-        // 4. ТІЛЬКИ ТЕПЕР видаляємо залишки HTML тегів
+
         .replace(/<[^>]+>/g, "");
 
-    // 5. Формуємо файл з Unicode
     const header = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\f0\\fs24 ";
     const body = content.split('').map(char => {
         const code = char.charCodeAt(0);
@@ -2110,8 +2079,6 @@ function htmlToRtf(html) {
     return header + body + "}";
 }
 
-
-// --- ВИПРАВЛЕНА ФУНКЦІЯ Openf (ТЕПЕР ВОНА ПОВНА) ---
 /**
  * Відкриває файл у новому вікні WinBox.
  * * @param {Event | File | string} source - Об'єкт події DOM, об'єкт File, або ім'я файлу (рядок).
@@ -2120,7 +2087,7 @@ function htmlToRtf(html) {
  * @param {File} [file=null] - Об'єкт файлу, якщо 'source' є подією, але викликано з контекстного меню.
  */
 function Openf(source, refr, type, file = null, disk = "idb") {
-    // --- ОГОЛОШЕННЯ ЗМІННИХ ---
+
     let fileWinBox;
     let fileType = "unknown";
     let exfile = null; // Знайдений об'єкт File
@@ -2128,20 +2095,19 @@ function Openf(source, refr, type, file = null, disk = "idb") {
     let listItem = null; // DOM-елемент, якщо знайдено (для іконки)
     let isEditable = false;
     const uniqueFileId = "content-" + Date.now();
-    
-    // --- 1. БЛОК ВИЗНАЧЕННЯ ДЖЕРЕЛА ТА КОНТЕКСТУ ---
+
     
     if (source && (source instanceof Event || source.currentTarget)) {
-        // --- СЦЕНАРІЙ А: ВИКЛИК З ПОДІЄЮ DOM (Стара логіка) ---
+
         const event = source;
         listItem = event.currentTarget;
         
         if (!type) {
-            // Звичайний клік (подвійний)
+
             filestr = listItem.innerText.trim();
             
         } else {
-            // Клік з контекстного меню "Як текст"
+
             
             filestr = listItem.getAttribute("data-file");
             
@@ -2156,20 +2122,20 @@ function Openf(source, refr, type, file = null, disk = "idb") {
         fileType = type || exfile.type; // Встановлюємо тип
         
     } else {
-        // --- СЦЕНАРІЙ Б: ВИКЛИК З ПРЯМИМ ОБ'ЄКТОМ/ІМ'ЯМ (Нова логіка) ---
+
         
         const fileOrName = source || file; // Використовуємо 'source' або 'file'
         
         if (typeof fileOrName === 'string') {
-            // Передано назву файлу (рядок)
+
             exfile = fs.find(item => item.name.trim() === fileOrName.trim());
 
             filestr = fileOrName;
         } else if (fileOrName instanceof File) {
-            // Передано об'єкт File
+
             exfile = fileOrName;
             filestr = fileOrName.name;
-            // listItem залишається null, тому іконку треба буде обрати за типом
+
         }
         
         if (!exfile) {
@@ -2178,42 +2144,34 @@ function Openf(source, refr, type, file = null, disk = "idb") {
         }
         fileType = type || exfile.type;
     }
-    
-    // Перевірка після всіх визначень
+
     if (!exfile) return;
-    
-    // --- 2. СТВОРЕННЯ WINBOX ---
+
     
     let ic;
     if (exfile) {
         ic = getIcon(exfile)
     }
-    
-    
-    
-    // Намагаємося отримати іконку з listItem, якщо він визначений (Сценарій А)
+
     if (listItem) {
         const img = listItem.querySelector('img');
         if (img) iconSrc = img.src;
     }
-    // Якщо listItem немає (Сценарій Б), тут може бути ваша логіка визначення іконки за fileType,
-    // яка вже є у функції renderFileList (потрібно дублювати або винести в окрему функцію).
+
+
 let w = 255;
 let h = 200;
 
 let typeclass = fileType.split("/")[0] || fileType;
     fileWinBox = new wm(filestr, {
         icon: ic,x: "center",y: "center", // Використовуємо визначену іконку
-        class: ["no-full", wbtheme, "media", typeclass],
+        class: ["no-full", wbtheme, typeclass],
         minheight: 200, minwidth: 255, width: w, height: h, x: "center",y: "center",
         html: `<div style="padding: 10px; color: black; height: 100%; text-align: center;overflow: hidden;">${_('loading_text')}</div>`
     });
-    
 
 
-    // --- 3. ЧИТАННЯ ВМІСТУ ФАЙЛУ ---
-    // ... (Тут продовжується логіка читання exfile)
-    // ...
+
 
 
 
@@ -2224,8 +2182,7 @@ let typeclass = fileType.split("/")[0] || fileType;
     reader.onload = async function(e) {
         const content = e.target.result;
         let newContent = '';
-        
-        // --- БЛОК ОБРОБКИ ЗА ТИПОМ ФАЙЛУ ---
+
         
         if (fileType == "application/x-theme") {
 isEditable = false;
@@ -2272,11 +2229,10 @@ newContent = `
             
         }else if (fileType === "text/csv") {
   isEditable = true;
-  
-  // Розбиваємо контент на рядки та комірки
+
   const rows = content.split("\n").map(row => row.split(","));
   
-  let tableHtml = `<div class="csv-editor-container" id="table-cont-${uniqueFileId}" style="overflow:auto; height:100%; ">
+  let tableHtml = `
     <table id="${uniqueFileId}" style="width:100%; border-collapse:collapse;">`;
   
   rows.forEach((row, rowIndex) => {
@@ -2289,7 +2245,7 @@ newContent = `
     tableHtml += "</tr>";
   });
   
-  tableHtml += `</table></div>
+  tableHtml += `</table>
     <style>
       #${uniqueFileId} td:focus { outline: 2px solid #0078d7; background: #f0f0f0; }
     </style>`;
@@ -2317,8 +2273,7 @@ if (fileType == "application/rtf") {
                 "p[style-name='Left'] => p.text-left"
             ]
         };
-        
-        // FIX: Wait for the result before moving on
+
         const result = await mammoth.convertToHtml({arrayBuffer: content}, options);
         initialHtml = result.value;
         
@@ -2326,9 +2281,6 @@ if (fileType == "application/rtf") {
         initialHtml = marked.parse(content);
     }
 
-
-
-    // Функція підрахунку символів
     window.input = (text) => {
 try{
         const symLabel = fileWinBox.body.querySelector("#sym");
@@ -2388,13 +2340,12 @@ try{
     </div>
 </div>
     `;
-    
-    // Ініціалізуємо лічильник відразу після рендеру (якщо ви використовуєте setTimeout або callback)
+
     setTimeout(() => {
         const el = document.getElementById(uniqueFileId);
         if (el) window.input(el.innerText);
     }, 10);
-} else if (fileType.startsWith("text/") || !exfile.name.includes(".")) {
+} else if (fileType.startsWith("text/") || !exfile.name.split("/").pop().substring(1).includes(".")) {
             
             if (fileType == "text/html"){
                 const titleMatch = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -2403,7 +2354,6 @@ if (titleMatch )fileWinBox.setTitle( titleMatch[1].trim())
                 const iconMatch = content.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i);
     if (iconMatch) fileWinBox.setIcon(iconMatch[1])
 
-                // HTML: iframe з sandbox
                 isEditable = false; 
 const redefiner = `
 <script>
@@ -2425,25 +2375,13 @@ window.Worker = parent.Worker;
 window.print = () => parent.print()
 </script>
 `;
-// Список опційних ознак фонової роботи
-const optionalCriteria = [
-    "setInterval(",
-    "setTimeout(",
-    "requestAnimationFrame(",
-    "addEventListener('message'", // для Web Workers
-    "Worker("
-];
 
-// Рахуємо, скільки опційних пунктів знайдено в контенті
-const foundOptionalCount = optionalCriteria.filter(criterion => content.includes(criterion)).length;
 
-// Умова: Notifications обов'язково + мінімум 2 пункти загалом (Notification + 1 опційний)
-// Оскільки Notification вже є одним із пунктів, нам треба знайти хоча б 1 з optionalCriteria
 if (content.includes("new Notification(") ) {
     
     fileWinBox.onclose = (urgent) => {
         if (!urgent) {
-            // Замість закриття — ховаємо вікно
+
             console.log(`[Infinity OS] Background mode activated for ${fileWinBox.title}`);
             fileWinBox.hide();
             return true; // Перехоплюємо закриття
@@ -2455,22 +2393,24 @@ if (content.includes("new Notification(") ) {
 }
 
 
-                newContent = `
-                    <div style="height: 100%; width: 100%;">
-                        <iframe 
-                            srcdoc="${redefiner.replace(/"/g, '&quot;')}${content.replace(/"/g, '&quot;')}" 
-                            style="width: 100%; height: 100%; border: none;">
-                        </iframe>
-                    </div>
-                `;
-                
+newContent = `
+    <div style="height: 100%; width: 100%;">
+        <iframe 
+            id="frame-${fileWinBox.id}"
+            srcdoc="${redefiner.replace(/"/g, '&quot;')}${content.replace(/"/g, '&quot;')}" 
+            style="width: 100%; height: 100%; border: none;"
+            onload="parent.applySystemConfig('${fileWinBox.id}')">
+        </iframe>
+    </div>
+`;
+
+
             } 
             else if (fileType == "text/javascript"){
                 isEditable = false;
                 newContent = eval(content);
                 fileWinBox.close();
             } else {
-                // Текст: Редактор
                 isEditable = true;
                 const safeContent = content.replace(/&/g, '&amp;')
                                            .replace(/</g, '&lt;')
@@ -2495,7 +2435,7 @@ if (content.includes("new Notification(") ) {
             }
             
         } else if (fileType.startsWith("image/")) {
-            // Зображення
+
             newContent = `<div style="text-align: center; height: 100%; width: 100%; overflow-y:hidden;">
                               <img src="${content}" style="max-width: 100%; height:100%; max-height: 100%; object-fit: contain;padding:0; margin:0;">
                           </div>`;
@@ -2561,34 +2501,29 @@ if (content.includes("new Notification(") ) {
         }
     };
 
-    // 3. JavaScript Logic: Function to update the entire custom UI
 const updateUI = () => {
         const audioPlayer = document.getElementById(uniqueFileId);
 
         if (!audioPlayer) return;
         audioPlayer.volume  =vol;
 
-        // --- NEW CUSTOM UI ELEMENTS ---
         const timeText = document.getElementById(`time-text-${uniqueFileId}`);
         const seekRange = document.getElementById(`seek-${uniqueFileId}`);
         const playStatus = document.getElementById(`play-status-${uniqueFileId}`);
-        
-        // --- Standard infinity file check (reuse logic) ---
+
         try {
             if (audioPlayer.canPlayType && !audioPlayer.canPlayType(fileType)) fileWinBox.close();
         } catch (e) {}
         
         if (isNaN(audioPlayer.duration)) return;
-        
-        // --- UPDATE NEW CUSTOM UI (Time & Seek) ---
+
         if (timeText) {
             timeText.innerText = formatTime(audioPlayer.currentTime);
         }
         if (seekRange) {
             seekRange.value = ((audioPlayer.currentTime / audioPlayer.duration) * 100);
         }
-        
-        // --- NEW: Play/Pause/Stop Indicator Blinking Logic ---
+
         if (playStatus) {
             if (audioPlayer.paused) {
                 if (audioPlayer.currentTime == 0) {
@@ -2605,8 +2540,7 @@ const updateUI = () => {
                 playStatus.innerText = '\u25B6';
                 playStatus.classList.add("blinking");
             }}
-        
-        // 2. Оновлення градієнта фону вікна (якщо мінімізовано)
+
             
         const progress = ((audioPlayer.currentTime / audioPlayer.duration) * 100).toFixed(2);
         const gradient = `linear-gradient(to right, rgba(0, 128, 0, 0.5) 0%, rgba(0, 128, 0, 1.0) ${progress}%, transparent ${progress}%, transparent 100%)`;
@@ -2615,18 +2549,13 @@ const updateUI = () => {
         fileWinBox.setBackground(combinedBackground);}
     };
 
-    // Оновлення в реальному часі під час відтворення (коли вікно відкрите)
-        // --- LOGIC INTERFACE INTEGRATION (Attach buttons and seekbar) ---
+
     setTimeout(() => {
         const player = document.getElementById(uniqueFileId);
         if (!player) return;
 
-
-        // Standard event (like your richText block uses callback)
         player.ontimeupdate = updateUI;
-        
-            
-            // --- ЛОГІКА VU-МЕТРІВ НА <meter> ---
+
         const meterL = document.getElementById(`meter-l-${uniqueFileId}`);
         const meterR = document.getElementById(`meter-r-${uniqueFileId}`);
         
@@ -2643,8 +2572,7 @@ if (meterL && meterR) {
 player._analyserL.fftSize = 32;
 player._analyserR.fftSize = 32;
 
-// Стандартні значення: min = -100, max = -30. 
-// Звужуючи цей діапазон, ми робимо метри супер-чутливими до тихих звуків:
+
 player._analyserL.minDecibels = -70; // Поріг повної тиші (чим ближче до 0, тим менше чутливість)
 player._analyserL.maxDecibels = -10; // Поріг максимального стрибка
 player._analyserR.minDecibels = -70;
@@ -2657,7 +2585,6 @@ player._analyserR.maxDecibels = -10;
         player._source.connect(player._audioCtx.destination);
     }
 
-    // Переходимо на справжні частотні дані (FrequencyData) - вони набагато ефектніші для VU-метрів
     const bufferLength = player._analyserL.frequencyBinCount;
     const dataArrayL = new Uint8Array(bufferLength);
     const dataArrayR = new Uint8Array(bufferLength);
@@ -2665,13 +2592,13 @@ player._analyserR.maxDecibels = -10;
     let animationFrameId;
 
     const updateMeters = () => {
-        // Перевіряємо, чи плеєр і самі метри ще існують в DOM
+
         const currentPlayer = document.getElementById(uniqueFileId);
         const mL = document.getElementById(`meter-l-${uniqueFileId}`);
         const mR = document.getElementById(`meter-r-${uniqueFileId}`);
         
         if (!currentPlayer || !mL || !mR || currentPlayer.paused) {
-            // Якщо на паузі або вікно закрили — скидаємо в 0 і зупиняємо цикл
+
             if (mL) mL.value = 0;
             if (mR) mR.value = 0;
             if (!currentPlayer || !mL) {
@@ -2682,7 +2609,6 @@ player._analyserR.maxDecibels = -10;
 
         animationFrameId = requestAnimationFrame(updateMeters);
 
-        // Беремо частоти (значення від 0 до 255)
         player._analyserL.getByteFrequencyData(dataArrayL);
         player._analyserR.getByteFrequencyData(dataArrayR);
 
@@ -2691,22 +2617,20 @@ player._analyserR.maxDecibels = -10;
             for (let i = 0; i < dataArray.length; i++) {
                 sum += dataArray[i];
             }
-            // Повертаємо середнє значення у відсотках (0-100)
+
             return (sum / dataArray.length) / 255 * 100;
         };
 
         const volL = getVolumeFromFrequencies(dataArrayL);
         const volR = getVolumeFromFrequencies(dataArrayR);
 
-        // Метри будуть дуже чутливими і "живими"
         const sensitivity = 0.5; 
         mL.value = Math.min(volL * sensitivity, 100);
         mR.value = Math.min(volR * sensitivity, 100);
     };
 
-    // Запускаємо тільки тоді, коли аудіо реально грає, щоб економити CPU
     player.onplay = () => {
-        // Браузери блокують AudioContext до першого кліку. Розблоковуємо при старті:
+
         if (player._audioCtx.state === 'suspended') {
             player._audioCtx.resume();
         }
@@ -2718,21 +2642,17 @@ player._analyserR.maxDecibels = -10;
         meterR.value = 0;
     };
 
-    // Якщо трек вже запущено (через autoplay), стартуємо метри відразу
     if (!player.paused) {
         updateMeters();
     }
 }
 
-
-        // Seekbar logic (Clicking and dragging on the range input)
         const seekInput = document.getElementById(`seek-${uniqueFileId}`);
         seekInput.oninput = function() {
             player.currentTime = (this.value / 100) * player.duration;
             updateUI(); // Immediate update when seekbar moves
         };
 
-        // Attach Button Controls
         document.getElementById(`ctrl-prev-${uniqueFileId}`).onclick = () => { player.currentTime -= 10; updateUI(); };
         document.getElementById(`ctrl-play-${uniqueFileId}`).onclick = () => { player.play(); updateUI(); };
         document.getElementById(`ctrl-pause-${uniqueFileId}`).onclick = () => { player.pause(); updateUI(); };
@@ -2742,7 +2662,6 @@ player._analyserR.maxDecibels = -10;
     }, 50);
 updateUI()
 
-    // Логіка для мінімізації (ваша існуюча)
     fileWinBox.onminimize = function() {
         updateUI();
         stopProgressInterval();
@@ -2764,7 +2683,7 @@ updateUI()
         stopProgressInterval();
     };
 } else if (fileType.startsWith("video/")) {
-            // Відео
+
             newContent = `<div style="height: 100%; overflow-y:hidden;"> <video controls src="${content}" style="width: 100%; height: 100%;max-width: 100%; max-height: 100%; object-fit: contain;padding:0; margin:0;"></video> </div>`;
             
         } else if (fileType == "application/pdf" && navigator.pdfViewerEnabled) {
@@ -2774,7 +2693,7 @@ updateUI()
              </div> 
             `;
         } else {
-            // Невідомий/Непідтримуваний тип
+
             newContent = `<div style="padding: 10px; color: black;">${_('unsupported_file_type')}</div>`;
         }
         
@@ -2784,7 +2703,6 @@ updateUI()
             console.warn('Running non-window application. Exiting GPU draw.')
         }
 
-        // --- 3. ЛОГІКА ОБРОБНИКІВ ДІЙ (ТІЛЬКИ ДЛЯ РЕДАГОВАНИХ ФАЙЛІВ) ---
         if (isEditable) {
 
             const printButton = fileWinBox.body.querySelector(`#printBtn-${uniqueFileId}`);
@@ -2795,16 +2713,13 @@ updateUI()
 
 
 if (exfile.name.endsWith(".html") || exfile.name.endsWith(".htm")) printButton.disabled = true;
-   
 
-                // ЛОГІКА ЗБЕРЕЖЕННЯ ПРИ КОМБІНАЦІЇ КЛАВІШ
                 fileWinBox.body.addEventListener('keydown', async function(event) { // ЗРОБЛЕНО ASYNC
-                    // Перевірка, чи натиснуто 'S'
+
 
 
                     if (event.ctrlKey || event.metaKey) {	
-                        
-                        // Перевірка комбінації: CtrlKey (Windows/Linux) або metaKey (Mac / Command)
+
                         const isSave = event.key.toLowerCase() === 's';
 						const isPrint = event.key.toLowerCase() === 'p';
 						const isFind = event.key.toLowerCase() === 'f';
@@ -2826,15 +2741,14 @@ findButton.onclick = async () => {
     const isTextarea = textArea.tagName.toLowerCase() === "textarea";
 
     if (isTextarea) {
-        // --- Логіка для Plain Text (.txt, .js, .css тощо) ---
+
         const text = textArea.value;
         const index = text.toLowerCase().indexOf(query.toLowerCase());
 
         if (index !== -1) {
             textArea.focus();
             textArea.setSelectionRange(index, index + query.length);
-            
-            // Прокрутка до виділення в textarea
+
             const lineHeight = parseFloat(window.getComputedStyle(textArea).lineHeight);
             const charsBefore = text.substring(0, index).split('\n');
             const currentRow = charsBefore.length;
@@ -2843,7 +2757,7 @@ findButton.onclick = async () => {
             await alert(_("not_found"));
         }
     } else {
-        // --- Логіка для Rich Text та CSV (HTML-контейнери) ---
+
         const container = tableCont || textArea;
         const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
         let textNode;
@@ -2884,7 +2798,6 @@ printButton.onclick = async () => {
     
     const iframe0 = document.createElement('iframe');
 
-    // Приховуємо фрейм
 
     document.body.appendChild(iframe0);
 
@@ -2892,16 +2805,14 @@ printButton.onclick = async () => {
 iframe0.contentWindow.print = window.print;
 
     doc.open();
-    // Додаємо базові стилі, щоб текст виглядав коректно при друці
+
     doc.write('<html><head><title>Print</title></head><body>' + newTextContent + '</body></html>');
     doc.close();
 
-    // Чекаємо завантаження контенту перед друком
     iframe0.contentWindow.focus(); 
     iframe0.contentWindow.print();
 
-    // Видаляємо фрейм після відкриття діалогу друку
-    // (Деякі браузери потребують затримки для коректної роботи)
+
     setTimeout(() => {
         document.body.removeChild(iframe0);
     }, 1000);
@@ -2926,12 +2837,10 @@ if (fileType == "application/rtf"){
 newTextContent = htmlToRtf(textArea.innerHTML);
 }else if (fileType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"){
 
-// 1. Parse padding into margins (e.g., "20px" -> 20)
-    // Convert px to twips: (px / 96) * 1440
+
     const paddingPx = parseInt(window.getComputedStyle(textArea).paddingLeft) || 20;
     const marginTwips = Math.round((paddingPx / 96) * 1440);
 
-    // 2. Generate the Blob first
 const cleanHtml = normalizeHTML(`  <!DOCTYPE html>
   <html>
     <head><meta charset="utf-8"></head>
@@ -2944,9 +2853,8 @@ const blob = htmlDocx.asBlob(cleanHtml, {
     margins: { top: marginTwips, right: marginTwips, bottom: marginTwips, left: marginTwips }
 });
 
-    // 3. Convert Blob to Uint8Array (Raw File Contents)
     newTextContent = blob;
-// ... всередині else після DOCX ...
+
 } else if (fileType === "text/csv" && tableCont) {
     const rows = Array.from(tableCont.querySelectorAll('tr'));
     newTextContent = rows.map(row => 
@@ -2960,15 +2868,12 @@ newTextContent = turndownService.turndown(textArea.innerHTML)
 }
 }
 
-
-                // Створення нового File об'єкта з оновленим вмістом
                 const newFile = new File([newTextContent], exfile.name, { type: exfile.type ,lastModified: Date.now() });
                 
                 const index = fs.findIndex(item => item.name === exfile.name);
                 if (index !== -1) {
                     fs[index] = newFile;
-                    
-                    // !!! ОНОВЛЕНО: ЗБЕРІГАЄМО ОДИН ФАЙЛ В IDB !!!
+
                     if (disk.type != "localStorage"){   await saveFileToDB(newFile);
                             } else{
                     localStorage.setItem(exfile.name, newTextContent)
@@ -2980,8 +2885,7 @@ newTextContent = turndownService.turndown(textArea.innerHTML)
         }
     } 
 
-    // --- 4. ЯК ЧИТАТИ ФАЙЛ ---
-    if (fileType.startsWith("text/") || !exfile.name.includes(".") || fileType == "application/x-theme"  || fileType== "application/rtf") {
+    if (fileType.startsWith("text/") ||!exfile.name.split("/").pop().substring(1).includes(".")  || fileType == "application/x-theme"  || fileType== "application/rtf") {
         console.log("readAsText");
         reader.readAsText(exfile);
     } else if (fileType.startsWith("image/") || fileType.startsWith("audio/") || fileType.startsWith("video/") || fileType.startsWith("font/") || fileType == "application/pdf") {
@@ -2990,14 +2894,12 @@ newTextContent = turndownService.turndown(textArea.innerHTML)
     } else {
         console.log("readAsArrayBuffer")
         reader.readAsArrayBuffer(exfile);
-        // Для бінарних/невідомих типів (архіви)
-        // Зазвичай тут варто було б викликати reader.readAsArrayBuffer, але для простоти...
-        
-        
     }
+
+
 } 
-// --- КІНЕЦЬ Openf ---
-// --- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ FILE EXPLORER ---
+
+
 
 /**
  * Асинхронно отримує інформацію про використання пам'яті (квоту)
@@ -3005,7 +2907,7 @@ newTextContent = turndownService.turndown(textArea.innerHTML)
  * @returns {Promise<{used: number, total: number}>} Використаний та загальний обсяг у байтах.
  */
 async function getStorageUsageInfo() {
-    // 1. Перевіряємо підтримку API
+
     if ('storage' in navigator && 'estimate' in navigator.storage) {
         try {
             const estimate = await navigator.storage.estimate();
@@ -3023,7 +2925,7 @@ async function getStorageUsageInfo() {
         }
     } else {
         console.warn("StorageManager API is not supported. Cannot estimate usage.");
-        // Повертаємо 0, щоб уникнути помилок, але функціонал працювати не буде
+
         return { used: 0, total: 0 }; 
     }
 }
@@ -3034,33 +2936,30 @@ async function getStorageUsageInfo() {
  * @returns {string} Форматований рядок.
  */
 function formatBytes(bytes) {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 
-async function zipFolder(folderPath, zipName = "archive.zip", compress = false) {
+async function zipFolder(folderPath, zipName = null, compress = false) {
     const zip = new JSZip();
-    
-    // 1. Нормалізація шляху папки
+
     const cleanFolderPath = folderPath.replace(/\/+$/, "") + "/";
     const folderName = cleanFolderPath.split("/").filter(Boolean).pop();
 
-    // 2. Виправляємо логіку формування імені архіву
-    // Якщо ім'я стандартне, беремо назву папки. Додаємо parentPath.
+
     const pathParts = cleanFolderPath.split("/").filter(Boolean);
     pathParts.pop();
     const parentPath = pathParts.length > 0 ? pathParts.join("/") + "/" : "";
 
-    const finalZipName = (zipName === "archive.zip") ? `${folderName}.zip` : zipName;
+    const finalZipName = (zipName === null) ? `${folderName}.zip` : zipName;
     const archivePath = parentPath + finalZipName;
 
-    // 3. Збір файлів
     for (const f of fs) {
-        // Пропускаємо сам архів та файли поза цільовою папкою
+
         if (f.name === archivePath) continue;
 
         if (f.name.startsWith(cleanFolderPath)) {
@@ -3077,7 +2976,6 @@ async function zipFolder(folderPath, zipName = "archive.zip", compress = false) 
         }
     }
 
-    // 4. Генерація та збереження
     const contentBlob = await zip.generateAsync({
         type: "blob",
         compression: compress ? "DEFLATE" : "STORE"
@@ -3085,7 +2983,6 @@ async function zipFolder(folderPath, zipName = "archive.zip", compress = false) 
 
     const resultFile = new File([contentBlob], archivePath, { type: "application/zip" });
 
-    // 5. Оновлення FS (уникаємо дублікатів у масиві)
     const existingIdx = fs.findIndex(file => file.name === archivePath);
     if (existingIdx !== -1) {
         fs[existingIdx] = resultFile; // Замінюємо старий файл новим
@@ -3093,7 +2990,6 @@ async function zipFolder(folderPath, zipName = "archive.zip", compress = false) 
         fs.push(resultFile);
     }
 
-    // Збереження в IndexedDB (через вашу системну функцію)
     await saveFileToDB(resultFile);
 
     console.log(`[Infinity OS] Archive created at: ${archivePath}`);
@@ -3103,111 +2999,71 @@ async function zipFolder(folderPath, zipName = "archive.zip", compress = false) 
 
 
 async function unzipFile(filePath, cwd) {
-let file;
-if (typeof filePath == "string"){
-file = fs.find(f => f.name === filePath);
-}else{
-    file = filePath
-}
+    let file;
+    if (typeof filePath == "string"){
+        file = fs.find(f => f.name === filePath);
+    } else {
+        file = filePath;
+    }
     if (!file) return;
 
-    
-
     var zip = new JSZip();
-// more files !
-await zip.loadAsync(file)
-try{
-    zip.forEach((relativePath, zipEntry) => {
-        if (!zipEntry.dir) {
-            console.log(`Extracting: ${relativePath}`);
+    await zip.loadAsync(file);
 
-            zipEntry.async("blob").then(content => {
+    const unzipPromises = [];
 
-                const type = getMimeType(zipEntry.name);
+    try {
+        zip.forEach((relativePath, zipEntry) => {
+            if (!zipEntry.dir) {
+                console.log(`Extracting: ${relativePath}`);
 
-const parts = zipEntry.name.split("/");
-const pureName = parts.pop(); // file.txt
-const folderPath = parts.join("/"); // folder
-let p;
-if (cwd == ""){
-    p = zipEntry.name;
-}else{
-    p = cwd+"/"+zipEntry.name;
+                const promise = zipEntry.async("blob").then(async (content) => {
+                    const type = getMimeType(zipEntry.name);
+                    const parts = zipEntry.name.split("/");
+                    const pureName = parts.pop(); 
+                    const folderPath = parts.join("/"); 
+                    
+                    let p;
+                    if (cwd == ""){
+                        p = zipEntry.name;
+                    } else {
+                        p = cwd + "/" + zipEntry.name;
+                    }
+
+                    const extractedFile = new File(
+                        [content],
+                        p,
+                        { type }
+                    );
+
+                    fs.push(extractedFile);
+
+                    await saveFileToDB(extractedFile); 
+                });
+
+                unzipPromises.push(promise);
+            }
+        });
+
+        await Promise.all(unzipPromises);
+        console.log("[JSZip Pipeline] Усі файли успішно вилучено в пам'ять та ФС!");
+
+    } catch (e) {
+        console.error("&" + e.message);
+    }
 }
-                const extractedFile = new File(
-                    [content],
-                   p,
-                    { type }
-                );
-
-                
-                fs.push(extractedFile);
-                saveFileToDB(extractedFile)
-            });
-        }
-        
-    });
-}catch (e){
-    console.error("&"+e.message)
-}
-}
 
 
-
-// Отримати розширення (універсально для об'єкта File або рядка)
-
-
-// Нова функція MIME-типів
 function getMimeType(fileName) {
     const ext = getExt(fileName);
     return (ext && FILE_TYPES[ext]) ? FILE_TYPES[ext].mime : 'application/octet-stream';
 }
 
-// Нова функція іконок
 function getIcon(file) {
     const ext = getExt(file);
     return (ext && FILE_TYPES[ext]) ? FILE_TYPES[ext].icon : icns.empty;
 }
 
-
-
-/**
- * Асинхронно видаляє файл з fs, IndexedDB та оновлює UI.
- * @param {string} fileName Ім'я файлу, який потрібно видалити.
- * @param {function} updateUICallback Функція для оновлення списку файлів (renderFileList).
- * @param {function} updateQuotaCallback Функція для оновлення індикатора квоти (updateQuotaInfo).
- * @returns {Promise<boolean>} Успішність операції.
- */
-async function deleteFile(fileName, updateUICallback, updateQuotaCallback) {
-    const initialLength = fs.length;
-    
-    // 1. Видаляємо файл з глобального масиву fs
-    fs = fs.filter(item => item.name !== fileName);
-    
-    if (fs.length < initialLength) {
-        try {
-            // 2. Видаляємо файл з IndexedDB (АСИНХРОННО)
-            await idbWrapper.deleteFile(fileName); 
-            const foundApp = apps.find(app => app.url === fileName);
-            if (foundApp){
-                apps = apps.filter(app => app.url !== foundApp.name);
-            }
-            // 3. Оновлюємо UI
-            updateUICallback();
-            await updateQuotaCallback(); 
-            
-            
-            return true;
-        } catch (error) {
-            console.error("Помилка видалення з IndexedDB:", error);
-            // Якщо IndexedDB дала помилку, варто було б відкотити fs, але для простоти поки ігноруємо
-            return false;
-        }
-    } 
-    return false;
-}
-
-// -------------------------------------------------------------------
 
 /**
  * Асинхронно перейменовує файл у fs, IndexedDB та оновлює UI.
@@ -3225,24 +3081,19 @@ async function performRename(fileIndex, newName, renderFileList, updateQuotaInfo
 
     const oldFile = fs[fileIndex];
     const oldName = oldFile.name;
-    
-    // 1. Створюємо новий Blob/File об'єкт з новим ім'ям
+
     const newFile = new File([oldFile], newName, { type: getMimeType(newName) ,lastModified: Date.now()});
 
-    // 2. Оновлюємо глобальний масив fs
     fs[fileIndex] = newFile;
     
     try {
-        // 3. Видаляємо старий запис з IndexedDB (за старим іменем)
+
         await idbWrapper.deleteFile(oldName);
-        
-        // 4. Зберігаємо новий запис з новим іменем
+
         const success = await saveFileToDB(newFile);
         
         if (success) {
-            
-            
-            // 5. Оновлюємо autoload, якщо перейменовується JS файл
+
             if (oldFile.type === 'text/javascript') {
                 let autoload = JSON.parse(localStorage.getItem('infinity_os_autoload') || '[]');
                 
@@ -3253,8 +3104,7 @@ async function performRename(fileIndex, newName, renderFileList, updateQuotaInfo
                     
                 }
             }
-            
-            // 6. Оновлюємо UI
+
 			if (renderFileList) await renderFileList();
             if (updateQuotaInfo) await updateQuotaInfo(); 
             
@@ -3267,7 +3117,6 @@ async function performRename(fileIndex, newName, renderFileList, updateQuotaInfo
     return false;
 }
 
-// -------------------------------------------------------------------
 
 
 async function createIDB() {
@@ -3282,7 +3131,7 @@ async function createIDB() {
 
         request.onupgradeneeded = (event) => {
             const db = event.target.result;
-            // Створюємо об’єктне сховище за ім’ям STORE_NAME
+
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME, { keyPath: "name" });
                 
@@ -3315,6 +3164,7 @@ async function unmountDrive(driveName){
 }
 
 async function mountDrive(driveName){
+    idbWrapper.db = null;
     DB_NAME = driveName;
     console.log("Attempting to mount:"+driveName)
     await idbWrapper.openDB();
@@ -3332,9 +3182,7 @@ async function handleCreateFile(renderFileList, updateQuotaInfo, cwd = "", cdsk 
     
     if (!fileName) return; 
 
-    // Додаємо .txt, якщо немає розширення
 
-    // Перевірка на дублікат
     if (fs.some(file => file.name === fileName)) {
 
         return;
@@ -3343,11 +3191,9 @@ async function handleCreateFile(renderFileList, updateQuotaInfo, cwd = "", cdsk 
 
     const path = cwd == "" ? fileName : cwd.trim() + "/" + fileName;
     const newFile = new File([""], path, { type: getMimeType(fileName) });
-    
-    // Додаємо в глобальний масив
+
     fs.push(newFile);
-    
-    // Зберігаємо в IndexedDB
+
     if (cdsk.type != "localStorage"){
     saveFileToDB(newFile);
     }else{
@@ -3376,8 +3222,8 @@ function getAllFileSizes(db, storeName) {
           sizes.push(item.size);
           total += item.size;
         }
-        // or if wrapped:
-        // if (item.file) total += item.file.size;
+
+
       }
 
       resolve({ sizes, total });
@@ -3409,7 +3255,7 @@ return new Promise((resolve, reject) => {
             const data = await new Promise(res => {
                 store.get(key).onsuccess = (e) => res(e.target.result);
             });
-            // Approximate size for structured clone
+
             totalSize += new Blob([JSON.stringify(data)]).size;
         }
       }
@@ -3423,7 +3269,7 @@ return new Promise((resolve, reject) => {
 async function updateDiskQuotaUI (disk, meter, text){
     try {
         if (disk.type === "localStorage") {
-            // приблизна оцінка: 2 байти на символ
+
             const usedBytes = JSON.stringify(localStorage).length * 2;
             const totalBytes = maxLS;
 if (meter && text){
@@ -3436,7 +3282,6 @@ if (meter && text){
         if (disk.type === "indexedDB") {
             const usedBytes = await getIndexedDBUsage(disk.name);
 
-            // беремо загальну квоту браузера як max
             const estimate = await navigator.storage.estimate();
             const totalBytes = estimate.quota || usedBytes;
             
@@ -3454,11 +3299,10 @@ if (meter && text){
         return {usedBytes: 0, totalBytes: 0};
     }
 }
-// --- Отримання всіх дисків ---
+
 async function getDisks() {
     const disks = [];
-    
-    // LocalStorage
+
     const lsUsed = JSON.stringify(localStorage).length * 2; // байти приблизно
     disks.push({
         type: "localStorage",
@@ -3468,7 +3312,6 @@ async function getDisks() {
         total: maxLS, // 5 MB стандарт
     });
 
-    // IndexedDB
     if (window.indexedDB && indexedDB.databases) {
         const dbs = await indexedDB.databases();
         for (const db of dbs) {
@@ -3534,21 +3377,18 @@ addIcon("files", icns.files, function(){ // ВИКОРИСТАННЯ КЛЮЧА
             const fileListContainer = this.body.querySelector(`#file-list-${uniqueId}`);
             const sideListContainer = this.body.querySelector(`#sidebar-${uniqueId}`);
 
-            let filesSettings = JSON.parse(localStorage.getItem("config/files")) || {"filesCols": [], "showHidden": true};
-            let filesCols = filesSettings.filesCols || [];
-            let filesShowHidden = filesSettings.showHidden || false;
+            
             
             const fileInput = this.body.querySelector(`#file-input-${uniqueId}`);
             
     const resizer = this.body.querySelector(`#resizer-${uniqueId}`);
-    
-    // Встановлюємо мінімальну ширину при старті
+
     let minSidebarWidth;
 
     const resize = (e) => {
-        // Отримуємо координати лівої межі вікна
+
         const rect = sideListContainer.getBoundingClientRect();
-        // Обчислюємо ширину як різницю між мишею та початком сайдбара
+
         const newWidth = e.clientX - rect.left;
         
         if (newWidth > 50 && newWidth < 600) { // Обмежуємо розумними межами
@@ -3559,34 +3399,28 @@ addIcon("files", icns.files, function(){ // ВИКОРИСТАННЯ КЛЮЧА
     resizer.addEventListener('mousedown', (e) => {
         e.preventDefault(); // Запобігаємо виділенню тексту при русі
         document.addEventListener('mousemove', resize);
-        
-        // Використовуємо { once: true } для автоматичного видалення обробника
+
         document.addEventListener('mouseup', () => {
             document.removeEventListener('mousemove', resize);
         }, { once: true });
     });
 
-    // Drag & Drop обробка
     fileListContainer.addEventListener("dragover", (e) => e.preventDefault());
-           
-            // --- ПРАВИЛЬНА ФУНКЦІЯ ОНОВЛЕННЯ ІНДИКАТОРА ---
+
             const updateQuotaInfo = async () => {
-                // 1. Отримання чистого обсягу у байтах
+
                 const info = await getStorageUsageInfo();
                 const usedBytes = info.used;
                 const totalBytes = info.total;
 
-                // 2. Форматування для тексту (MB, GB тощо)
                 const usedTextFormatted = formatBytes(usedBytes);
                 const totalTextFormatted = formatBytes(totalBytes);
-                
-                // 3. Розрахунок відсотка
+
                 const percentage = totalBytes > 0 ? ((usedBytes / totalBytes) * 100).toFixed(2) : 0;
                 
                 
             };
 
-            // --- ФУНКЦІЯ ВІДОБРАЖЕННЯ ФАЙЛІВ (ДОДАНО КНОПКУ ВИДАЛЕННЯ) ---.
             let currentDir = "";
             
             const getFoldersInDir = (dir) => {
@@ -3629,7 +3463,6 @@ const getFilesInDir = (dir) => {
     });
 };
 
-// ПКМ
 
 const menu = document.getElementById("fileM");
 
@@ -3644,40 +3477,33 @@ menu.addEventListener("click", (e) => {
 
   console.log("ACTION:", action, file);
 
-  // ⚠️ окрема логіка для checkbox
   if (e.target.tagName === "INPUT") {
     console.log("Checkbox changed:", e.target.checked);
     return;
   }
 
-  // тут твої дії
 });
 const showContextFldrMenu = (e, currFolder) => {
     e.preventDefault(); // Завжди корисно для контекстного меню
-    
-    // Перевірка цілі
+
     if (e.target.closest("ul") !== e.target) return;
-    
-    // 1. Ховаємо ВСІ меню
+
     document.querySelectorAll(".menu").forEach(item => item.style.display = "none");
     
     const menu = document.getElementById("folderM");
     const cleanFolder = currFolder.trim();
-    
-    // 2. Визначаємо, які кнопки мають бути видимими
-    // Починаємо з базових кнопок (наприклад, Створити файл)
+
+
     const visibleButtons = ["create_item_btn"]; 
 
     if (cleanFolder !== "/" && cleanFolder !== "") {
         visibleButtons.push("getinfo1_btn");
     }
 
-    // 3. Скидаємо відображення ВСІХ пунктів меню перед показом потрібних
     menu.querySelectorAll("li").forEach(li => {
         li.style.display = "none";
     });
 
-    // 4. Активуємо та налаштовуємо лише потрібні кнопки
     visibleButtons.forEach(id => {
         const btn = document.getElementById(id);
         if (btn) {
@@ -3686,14 +3512,12 @@ const showContextFldrMenu = (e, currFolder) => {
         }
     });
 
-    // 5. Переклад (i18n)
     menu.querySelectorAll("li > p, label, b").forEach(item => {
-        // Використовуємо оригінальний текст як ключ, якщо ще не перекладено
+
         if (!item.dataset.key) item.dataset.key = item.innerText;
         item.innerText = _(item.dataset.key);
     });
 
-    // 6. Позиціонування та показ
     menu.style.left = e.clientX + "px";
     menu.style.top = e.clientY + "px";
     menu.style.display = "block";
@@ -3703,10 +3527,8 @@ const showContextFldrMenu = (e, currFolder) => {
 const showContextMenu = (e, itemType, fileName) => {
     e.preventDefault();
 
-    // Сховати інші меню
     document.querySelectorAll(".menu").forEach(item => item.style.display = "none");
 
-    // Встановити data-file на всі кнопки
     const buttons = [
   "open_btn",
   "open_as_text_btn",
@@ -3725,21 +3547,17 @@ const showContextMenu = (e, itemType, fileName) => {
   "print_btn"
 ];
 
-// 1. Перевірка файлу
 console.log(fileName+" "+itemType)
 
-// 2. RESET: показати всі кнопки
 buttons.forEach(id => {
   const btn = document.getElementById(id);
   btn.style.display = "block";
 });
 
-// 3. Переклад
 document.getElementById("fileM")
   .querySelectorAll("li > p, label, b")
   .forEach(item => item.innerText = _(item.innerText));
 
-// ===== ЛОГІКА ПО ТИПУ =====
 
 if (itemType === "localStorage") {
   buttons.forEach(id => document.getElementById(id).style.display = "none");
@@ -3802,7 +3620,6 @@ document.getElementById("print_btn").style.display = "none";
 document.getElementById("default_btn").style.display = "none";
 }
 
-// 4. Показ меню
 const menu = document.getElementById("fileM");
 menu.style.left = e.clientX + "px";
 menu.style.top = e.clientY + "px";
@@ -3811,7 +3628,7 @@ menu.style.display = "block";
 buttons.forEach(id => {
   const btn = document.getElementById(id);
   btn.setAttribute("data-file", fileName);
-  //console.log(fileName)
+
 });
 };
 
@@ -3847,7 +3664,6 @@ if (open) {
 
 const disks = await getDisks();
 
-    // --- ДИСКИ ---
 
         sideListContainer.innerHTML = '';
     disks.forEach(disk => {
@@ -3864,10 +3680,36 @@ const disks = await getDisks();
         const meter = li.querySelector(".quota-progress");
 const text = li.querySelector(".quota-text");
 
-// тут потім викличеш свою getStorageUsage(disk)
 updateDiskQuotaUI(disk, meter, text);
 
-        // Клік по диску
+        li.oncontextmenu = (e) => {
+            e.preventDefault();
+            const li = e.target.closest("li");
+            const diskLi = li.textContent.trim().split(" ");
+            const diskName = diskLi
+                .splice(0, diskLi.length - 5)
+                .join(" ")
+                .trim();
+            
+            const startupCheckbox = document.getElementById("isStartup");
+            
+            
+            startupCheckbox.checked = (diskName === startupDisk);
+
+            startupCheckbox.onchange = (ev) => {
+                console.log(startupDisk)
+                if (ev.target.checked) {
+
+                    
+                    localStorage.setItem("startup_disk", diskName);
+                } else {
+                    localStorage.removeItem("startup_disk");
+                }
+            }
+            
+            showContextMenu(e, disk.type, diskName);
+        };
+
         li.onclick = async () => {
             open = 1;
             currentDisk = disk;
@@ -3875,16 +3717,17 @@ updateDiskQuotaUI(disk, meter, text);
             fileListContainer.innerHTML = '';
 
             if (disk.type === "localStorage") {
-                // Файли з LS - просто ключі як файли
+
                 const keys = Object.keys(localStorage);
                 fs = keys.map(k => new File([localStorage.getItem(k)], k, { type: getMimeType(k)}));
             } else if (disk.type === "indexedDB") {
-                //fs = [];
+
                 if (!disk.mounted) {
                     new Error()
                 }
                 currentDir = "";
-                //idbWrapper.db?.close();
+                document.getElementById("pathlabel-"+uniqueId).value = currentDir;
+
                 idbWrapper.db = null;
                 if (DB_NAME != disk.name){
                 DB_NAME = disk.name;   
@@ -3894,39 +3737,12 @@ updateDiskQuotaUI(disk, meter, text);
         await loadFsFromDB();
             }
             await renderFileList(); // оновлюємо список
+
             
             
         };
 
-        // ПКМ для диску
-        li.oncontextmenu = (e) => {
-            e.preventDefault();
-            const li = e.target.closest("li");
-    const diskLi = li.textContent.trim().split(" ");
-const diskName = diskLi
-  .splice(0, diskLi.length - 5)
-  .join(" ")
-  .trim();
-    
-    const startupCheckbox = document.getElementById("isStartup");
 
-
-startupCheckbox.checked = (diskName === startupDisk);
-
-// onchange через замикання
-startupCheckbox.onchange = (ev) => {
-    console.log(startupDisk)
-    if (ev.target.checked) {
-        //console.log(fileName+" u")
-        
-        localStorage.setItem("startup_disk", diskName);
-    } else {
-        localStorage.removeItem("startup_disk");
-    }
-}
-
-showContextMenu(e, disk.type, diskName);
-        };
 
         sideListContainer.appendChild(li);
     });
@@ -3935,81 +3751,135 @@ minSidebarWidth = parseInt(window.getComputedStyle(sideListContainer).width) || 
 
 if (!currentDisk) return;
 
-        // 📁 ПАПКИ
     const folders = getFoldersInDir(currentDir);
     folders.forEach(folderName => {
         let li = document.createElement("li");
-        
-
-
-
 const safeId = folderName.replace(/\s+/g, "_").replace(/\//g, "_");
 
-    // innerHTML with badge on top of icon
-    li.innerHTML = `
-        <span style="position:relative; display:inline-block; width:20px; height:20px; margin-right:10px;">
-            <img src="${icns.folder}" width="20" height="20">
-            <span id="${safeId}" style="
-                position:absolute;
-                top:3px;
-                left:0px;
-                
-                color: rgba(0,0,0,0.5);
-                
-                font-size:8px;
-                width:20px;
-                height:20px;
-                
-                display:flex;
-                align-items:center;
-                justify-content:center;
-            ">0</span>
-        </span>
-        ${folderName}
-    `;
+const folderDisplay = document.createElement("span");
+folderDisplay.style.cssText = "flex-grow:1; display:flex; align-items:center;";
 
+folderDisplay.innerHTML = `
+    <span style="position:relative; display:inline-block; width:20px; height:20px; margin-right:10px; flex-shrink:0;">
+        <img src="${icns.folder}" width="20" height="20">
+        <span id="${safeId}" style="
+            position:absolute;
+            top:3px;
+            left:0px;
+            color: rgba(0,0,0,0.5);
+            font-size:8px;
+            width:20px;
+            height:20px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        ">0</span>
+    </span>
+    <p class="folder-name-text" style="flex-grow:1; margin:0;">${folderName}</p>
+`;
 
+const insideFiles = fs.filter(f => f.name.startsWith(currentDir ? currentDir + "/" + folderName + "/" : folderName + "/"));
 
+filesCols.forEach(col => {
+    if (col === 'lastModified') {
 
-        li.onclick = () => {
-            currentDir = currentDir ? currentDir + "/" + folderName : folderName;
-             renderFileList();
-        };
+        const timestamps = insideFiles.map(f => {
+
+            return typeof f.lastModified === 'number' ? f.lastModified : new Date(f.lastModified).getTime();
+        }).filter(t => !isNaN(t));
+
+        let formattedDate = "N/A";
+        if (timestamps.length > 0) {
+            const modifiedDate = Math.max(...timestamps);
+            formattedDate = new Intl.DateTimeFormat(dateLang, localeFormat).format(new Date(modifiedDate));
+        }
         
-        li.oncontextmenu = (e) => {
-            e.preventDefault();
+        folderDisplay.innerHTML += `<p class="col-date">${formattedDate}</p>`;
+    } 
+    else if (col === 'type') {
+        folderDisplay.innerHTML += `<p class="col-type">${_("folder")}</p>`;
+    } 
+    else if (col === 'size') {
+        let sum = 0;
+        insideFiles.forEach(f => {
+
+            if (typeof f.size === 'number') {
+                sum += f.size;
+            } else if (typeof f.size === 'string') {
+                const num = parseFloat(f.size);
+                if (!isNaN(num)) {
+                sum += num;
+                }
+            }
+        });
+
+        
+        
+
+        folderDisplay.innerHTML += `<p class="col-size">${formatBytes(sum)}</p>`;
+    }
+});
+
+li.appendChild(folderDisplay);
+
+
+li.oncontextmenu = (e) => {
+    e.preventDefault();
     const li = e.target.closest("li");
-    const folderName1 = currentDir == "" ? folderName.trim()+"/" :currentDir+ "/" + folderName.trim()+"/";
+    const folderName1 = currentDir == "" ? folderName.trim() + "/" : currentDir + "/" + folderName.trim() + "/";
     
     
     showContextMenu(e, "folder", folderName1);
 };
+
+        li.onclick = () => {
+            currentDir = currentDir ? currentDir + "/" + folderName : folderName;
+             renderFileList();
+             document.getElementById("pathlabel-"+uniqueId).value = currentDir;
+        };
+        
+        
 const isHidden = folderName.startsWith(".");
 
-// 2. Визначаємо, чи взагалі показувати цей елемент
 if (!isHidden || filesShowHidden) {
-    // Додаємо елемент у список
+
     fileListContainer.appendChild(li);
 
-    // 3. Якщо він прихований (і ми його показуємо), робимо його напівпрозорим
     if (isHidden) {
         li.style.opacity = "0.5"; 
     }
 }
-    // update the badge count
+
     const folderName2 = currentDir == "" ? folderName.trim()+"/" :currentDir+ "/" + folderName.trim()+"/";
     const count = fs.filter(f => f.name.startsWith(folderName2) && f.name.trim() != folderName2).length;
     
     document.getElementById(safeId).textContent = count;
     });
 
-        // 📄   (твій старий код майже без змін)
     const files = getFilesInDir(currentDir);
     files.forEach(file => {
         let li = document.createElement("li");
         li.setAttribute("data-path", file.name);
         let ic = getIcon(file)
-        
+
+li.oncontextmenu = (e) => {
+    e.preventDefault();
+    const li = e.target.closest("li");
+    const fileName = file.name;
+
+    if (fileName.endsWith(".js")) {
+        const autoloadString = localStorage.getItem('infinity_os_autoload');
+        if (autoloadString) {
+            const autoload = JSON.parse(autoloadString);
+            const autoloadCheckbox = document.getElementById("isAutoload");
+            if (autoloadCheckbox) {
+                autoloadCheckbox.checked = autoload.includes(file.name);
+            }
+        }
+    }
+    
+    showContextMenu(e, "file", fileName);
+}
 
         const fullPath = file.name;
 
@@ -4021,7 +3891,7 @@ if (!isHidden || filesShowHidden) {
         `;
         filesCols.forEach(col => {
         if (col === 'lastModified') {
-            // Форматування дати
+
             const formattedDate = new Intl.DateTimeFormat(dateLang, localeFormat)
                 .format(new Date(file.lastModified));
             
@@ -4031,19 +3901,18 @@ if (!isHidden || filesShowHidden) {
             fileDisplay.innerHTML += `<p class="col-type">${file.type}</p>`;
         }
         else if (col === 'size') {
-    fileDisplay.innerHTML += `<p class="col-size">${file.size}</p>`;
+            fileSize = formatBytes(file.size)
+    fileDisplay.innerHTML += `<p class="col-size">${fileSize}</p>`;
 }
-        // Додавайте інші умови (size, type тощо) тут
+
     });
 
         fileDisplay.onclick = (e) => {
     e.stopPropagation();
 
-    // Беремо шлях файлу з атрибута data-path li
     const li = e.target.closest("li");
     const filePath = li.getAttribute("data-path");
 
-    // Знаходимо файл у fs по path
     const file = fs.find(f => f.name === filePath);
 
     if (!file) {
@@ -4051,14 +3920,10 @@ if (!isHidden || filesShowHidden) {
         return;
     }
 
-    // Викликаємо Openf без Event
     console.log(currentDisk.name)
     Openf(null, updateQuotaInfo, getMimeType(file.name), file, currentDisk);
 };
 
-                if (document.getElementById("pathlabel-"+uniqueId)){
-                document.getElementById("pathlabel-"+uniqueId).value = currentDir;
-                }
                 document.getElementById("pathlabel-"+uniqueId).onchange = (e) => {
                     currentDir = document.getElementById("pathlabel-"+uniqueId).value;
                      renderFileList();
@@ -4093,27 +3958,11 @@ if (currentDir != ""){
     currentDisk = null
 }
 setTimeout(renderFileList, 10);
+document.getElementById("pathlabel-"+uniqueId).value = currentDir;
 }
 }
 
-li.oncontextmenu = (e) => {
-    e.preventDefault();
-    const li = e.target.closest("li");
-    const fileName = file.name;
-    // isAutoload для JS
-    if (fileName.endsWith(".js")) {
-        const autoloadString = localStorage.getItem('infinity_os_autoload');  
-        if (autoloadString) {
-            const autoload = JSON.parse(autoloadString);
-            const autoloadCheckbox = document.getElementById("isAutoload");
-            if (autoloadCheckbox) {
-                autoloadCheckbox.checked = autoload.includes(file.name);
-            }
-        }
-    }
-    
-    showContextMenu(e, "file", fileName);
-}
+
 
 defaultBtn.onclick = async (e) => {
 
@@ -4137,7 +3986,7 @@ formatBtn.onclick = async (e) => {
         await localStorage.clear();
     }else{
         const transaction = dbInstances[driveName].transaction([driveName], "readwrite");
-// Get the object store and clear it
+
 const objectStore = transaction.objectStore(driveName);
 const request = objectStore.clear();
     }
@@ -4173,9 +4022,8 @@ getinfo1Btn.onclick = async (e) => {
 };
 
 getInfo = async (e, btn) => {
-    //e.stopPropagation();
-    
-    //const li = e.target.closest("li");
+
+
     
     const filePath = btn.getAttribute("data-file");
     
@@ -4203,27 +4051,19 @@ getInfo = async (e, btn) => {
     }else{
         fileName = filePath.split('/').pop();
     }
-    
-    // Форматування розміру
+
     let fileSize;
     if (typeofpath == "file") {
-        fileSize = file.size > 1024 * 1024 ?
-            (file.size / (1024 * 1024)).toFixed(2) + " MB" :
-            (file.size / 1024).toFixed(2) + " KB";
+        fileSize = formatBytes(file.size)
     }else if (typeofpath == "drive"){
-        fileSize = file.total > 1024 * 1024 ?
-            (file.total / (1024 * 1024)).toFixed(2) + " MB" :
-            (file.total / 1024).toFixed(2) + " KB";
+        fileSize = formatBytes(drive.total);
     } else {
         let sum = 0;
         fs.forEach(f => { if (f.name.startsWith(filePath)) sum += f.size; });
-        fileSize = sum > 1024 * 1024 ?
-            (sum / (1024 * 1024)).toFixed(2) + " MB" :
-            (sum / 1024).toFixed(2) + " KB";
+        fileSize = formatBytes(sum)
             
     }
 
-    // Локалізація дати
     const dateOptions = localeFormat;
     let modifiedDate,formattedDate;
     if (typeofpath == "file") {
@@ -4236,10 +4076,10 @@ getInfo = async (e, btn) => {
   
 
 formattedDate = new Intl.DateTimeFormat(dateLang, dateOptions).format(new Date(modifiedDate));
-    // Тип файлу для відображення
+
     let type;
     type = filePath.endsWith("/") ? _("folder") : file.type;
-    // Іконка
+
     let ic;
     
         if (typeofpath == "file"){
@@ -4253,11 +4093,7 @@ formattedDate = new Intl.DateTimeFormat(dateLang, dateOptions).format(new Date(m
         }else{
             ic = icns.folder;
         }
-        
-    
-    
 
-    // Відкриття вікна
     const win = new wm(_("info"), {x: "center",y: "center",
         class: ["no-full", wbtheme, "no-max"],
         icon: icns.dialogInfo,
@@ -4336,7 +4172,6 @@ if (!filePath.endsWith("/")) {
     }
 }
 
-// Додаємо до тіла WinBox
 win.body.appendChild(metaDiv);
 };
 
@@ -4362,44 +4197,40 @@ zipBtn.onclick = async (e) => {
 
 
 document.getElementById("isAutoload").onchange = (e) => {
-    // 1. Ініціалізація та отримання даних
+
     let autoload = [];
     const autoloadString = localStorage.getItem('infinity_os_autoload');
     if (autoloadString) {
         try {
-            // Перетворюємо JSON-рядок на масив
+
             autoload = JSON.parse(autoloadString);
         } catch (error) {
             console.error("Помилка парсингу autoload JSON:"+ error);
-            // Якщо парсинг невдалий, починаємо з порожнього масиву
+
             autoload = []; 
         }
     }
 
-    // 2. Логіка додавання/видалення на основі стану чекбокса
     const fileName = e.target.parentNode.getAttribute("data-file");
 
-    // e.target.checked є коректним станом (true, якщо увімкнено)
     
     if (e.target.checked) {
-        // Якщо чекбокс увімкнено, і файлу ще немає, додаємо його
+
         if (!autoload.includes(fileName)) {
             autoload.push(fileName);
         }
     } else {
-        // Якщо чекбокс вимкнено, видаляємо файл зі списку
-        // Використовуємо filter для безпечного видалення
+
+
         autoload = autoload.filter(name => name !== fileName);
     }
-    
-    // 3. Збереження оновленого масиву
-    // Перетворюємо масив назад у JSON-рядок
+
+
     localStorage.setItem('infinity_os_autoload', JSON.stringify(autoload));
     
     
 };
 
-                  // Обробники
     setbgBtn.onclick = (e) => {
                         e.stopPropagation(); // Важливо: запобігає виклику Openf при натисканні X
                         const fileName = e.target.closest("li").getAttribute("data-file");
@@ -4409,13 +4240,11 @@ document.getElementById("isAutoload").onchange = (e) => {
         reader.onload = async function(e) {
             
             const dataUrl = e.target.result;
-            // Установка фону на <body>
+
             document.body.style.backgroundImage = `url(${dataUrl})`;
-            
-            // --- НОВА ЛОГІКА ЗБЕРЕЖЕННЯ ІМЕНІ ФАЙЛУ ФОНУ ---
+
             localStorage.setItem('infinity_os_background_file', file.name);
-            
-            // --- КІНЕЦЬ НОВОЇ ЛОГІКИ ---
+
             }
             reader.readAsDataURL(file);
                     };
@@ -4436,8 +4265,7 @@ document.getElementById("isAutoload").onchange = (e) => {
                 
 const deleteRequest = indexedDB.deleteDatabase(fileName);
         deleteRequest.onsuccess = () => console.log(`База ${fileName} видалена`);
-        
-        //disks = getDisks()
+
         await renderFileList();
         deleteRequest.onerror = (e) => console.warn(`Помилка при видаленні ${fileName}:`, e);
 
@@ -4446,10 +4274,9 @@ return 1;
         }
         
         if (currentDisk.type === "localStorage") {
-            
-            // ==== Робота з Local Storage ====
+
             if (isFolder) {
-                // Видалення всіх ключів у localStorage, що починаються з шляху папки
+
                 Object.keys(localStorage).forEach(key => {
                     if (key.startsWith(fileName)) {
                         localStorage.removeItem(key);
@@ -4463,12 +4290,11 @@ return 1;
             setTimeout(()=>{ renderFileList(); updateQuotaInfo()},100)
             return;
         }
-        
-        // ==== Робота зі звичайною файловою системою (fs) ====
+
         const file = fs.find(f => f.name === fileName);
         
         if (isFolder) {
-            purgeDir(fileName);
+            await purgeDir(fileName);
             await renderFileList();
             return;
         }
@@ -4488,7 +4314,8 @@ return 1;
           await updateFonts("delete", fileName)
         }
         
-        deleteFile(file.name, renderFileList, updateQuotaInfo);
+        await deleteFile(file.name);
+        await renderFileList()
     }
 };
 
@@ -4521,7 +4348,7 @@ renBtn.onclick = async (e) => {
     if (!newName || newName === oldName) return;
     
     if (currentDisk.type === "localStorage") {
-        // ==== Перейменування Local Storage ====
+
         
         
         
@@ -4535,8 +4362,7 @@ renBtn.onclick = async (e) => {
         updateQuotaInfo();
         return;
     }
-    
-    // ==== Перейменування через fs ====
+
     if (isFolder) {
         
             
@@ -4580,12 +4406,10 @@ if (fileName.endsWith("/")){
                     li.appendChild(fileDisplay);
                     const isHidden = file.name.split("/").pop().startsWith(".");
 
-// 2. Визначаємо, чи взагалі показувати цей елемент
 if (!isHidden || filesShowHidden) {
-    // Додаємо елемент у список
+
     fileListContainer.appendChild(li);
 
-    // 3. Якщо він прихований (і ми його показуємо), робимо його напівпрозорим
     if (isHidden) {
         li.style.opacity = "0.5"; 
     }
@@ -4595,7 +4419,7 @@ if (!isHidden || filesShowHidden) {
                 });
             };
             document.getElementById("create_item_btn").onclick = () => {
-    // Припускаємо, що ви передаєте ваші функції рендерингу та оновлення квоти
+
     if (open){
     handleCreateFile(renderFileList, updateQuotaInfo, currentDir, currentDisk);
     } else{
@@ -4610,26 +4434,24 @@ if (!isHidden || filesShowHidden) {
     const fls = e.dataTransfer.files;
 
     for (const file of fls) {
-        // 1. Читаємо вміст файлу як ArrayBuffer (універсально для будь-яких типів)
+
         const content = await file.arrayBuffer(); 
         
         const path = currentDir == "" ? file.name : currentDir.trim() + "/" + file.name;
 
-        // 2. Створюємо новий об'єкт File. 
-        // Важливо: передаємо content як масив [content]
+
         const a = new File([content], path, {
             type: getMimeType(path),
             lastModified: file.lastModified
         });
 
-        // 3. Зберігаємо у вашу віртуальну ФС та БД
         fs.push(a);
         await saveFileToDB(a); 
     }
 
     renderFileList();
 }
-            // --- Обробник завантаження (ASYNC) ---
+
             fileInput.onchange = async (event) => { 
                 if (fileInput.files.length > 0) {
                     let filesAdded = 0;
@@ -4647,16 +4469,14 @@ if (!isHidden || filesShowHidden) {
  const reader = new FileReader();
 
     reader.onload = function(e) {
-      // The result is a Base64 data URL string
+
       const fileDataURL = e.target.result;
 
-      // Store the string in localStorage using a key-value pair
-      // The key is "savedFile", and the value is the data URL string
+
       localStorage.setItem(file.name, fileDataURL);
       console.log("File saved to localStorage:", localStorage.getItem("savedFile"));
     };
 
-    // Read the file as a DataURL (Base64 string)
     reader.readAsDataURL(file);
                             localStorage.setItem(file.name, serializeFile(file))
                         }
@@ -4678,15 +4498,12 @@ if (!isHidden || filesShowHidden) {
                 }
             };
 
-            // Перше відображення та оновлення при створенні вікна
             await renderFileList();
             await updateQuotaInfo(); 
         }
     });
 });
 
-
-// --- ІНШІ ФУНКЦІЇ БЕЗ ЗМІН ---
 /* addIcon, Openf (повністю оновлена вище), Clock, Calculator, Internet, updateTime, setInterval(updateTime, 1000); 
 */
 
@@ -4694,10 +4511,10 @@ if (!isHidden || filesShowHidden) {
 
 
 
-addIcon(("about"),icns.dialogInfo, function(){ // ВИКОРИСТАННЯ КЛЮЧА
+addIcon(("about"),icns.dialogInfo, function(){
     new wm(_("about"),{ // ВИКОРИСТАННЯ _()
     icon: icns.dialogInfo,x: "center",y: "center",
-    class: ["no-full", "no-max", "no-min", "no-resize", "tra", wbtheme],
+    class: ["no-full", "no-max", "no-min", "no-resize", 'tra', wbtheme],
     html: `
     <link rel="stylesheet" href="global.css">
             <div style="padding: 5px;  font-size: 15px;text-align: center;">
@@ -4739,14 +4556,16 @@ addIcon("Infinity Store",icns.store, function(){
     icon: icns.store,x: "center",y: "center",
     class: ["no-full", wbtheme],
     url: "apps/store.html",
-          height:300,width:400,minheight: 200,minwidth:400
+          height:300,width:400,minheight: 200,minwidth:400,oncreate: function() {
+            applySystemConfig(this.id)
+          }
     
   });
 });
 
 
-addIcon(("clock_title"), icns.clock, function(){
-    new wm(_('clock_title'), { 
+addIcon(("clock"), icns.clock, function(){
+    new wm(_('clock'), { 
         icon: icns.clock, x: "center",y: "center",
         class: ['no-full', 'no-max', wbtheme,'no-resize', 'tra'], 
         html: `<div style=\'padding-left:5px;\'><h2 class=\'clock-time\' style=\'font-size: 2em; margin: 0;\'>--:--:--</h2><p class=\'clock-date\' style=\'margin: 0;\'>--.--.----</p></div>`, 
@@ -4754,13 +4573,121 @@ addIcon(("clock_title"), icns.clock, function(){
     });
 })
 
-addIcon(("calculator_title"), icns.calc, function(){
-    new wm(_('calculator_title'),{x: "center",y: "center", icon: icns.calc, class: ['no-full', 'no-max', wbtheme,'no-resize'], url: 'apps/calc.html', height:235, width:205 });
-})
+addIcon(("calculator"), icns.calc, function(){
 
-addIcon(("settings_title"), icns.settings, function(){
-    new wm(_('settings_title'),{x: "center",y: "center",
-     icon: icns.settings, class: ['no-full', wbtheme], 
+    const calcId = Math.floor(Math.random() * 1000000);
+    const instanceName = `InfinityCalc_${calcId}`;
+
+    new wm(_('calculator'),{
+        x: "center",
+        y: "center", 
+        icon: icns.calc, 
+        class: ['no-full', 'no-max', wbtheme, 'no-resize', 'tra'], 
+        html: `
+            <style> 
+                .calc-container {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr); /* 4 абсолютно рівні колонки */
+                    gap: 6px; /* Гарні рівномірні відступи */
+                    padding: 6px;
+                    box-sizing: border-box;
+                    width: 100%;
+                    height: 100%;
+                }
+                .calc-btn {
+                    width: 100%;
+                    height: 42px;
+                    font-size: 20px;
+                    color: black !important;
+                    cursor: pointer;
+                    box-sizing: border-box;
+                    border-radius: 6px; /* Трохи заокруглення в стиль ОС */
+                }
+                .calc-display {
+                    grid-column: span 2; /* Дисплей займає рівно дві колонки */
+                    width: 100%;
+                    height: 42px;
+                    font-size: 22px;
+                    text-align: right;
+                    padding-right: 8px;
+                    box-sizing: border-box;
+                    border-radius: 6px;
+                }
+            </style> 
+
+            <div class="calc-container"> 
+                <input inputmode="decimal" type="text" id="calc-result-${calcId}" class="calc-display" readonly />
+                
+                <input type="button" value="C" class="calc-btn" onclick="window.${instanceName}.clr()"/> 
+                <input type="button" value="π" class="calc-btn" onclick="window.${instanceName}.ent(Math.PI.toFixed(5))"/> 
+
+                <input type="button" value="1" class="calc-btn" onclick="window.${instanceName}.dis('1')"/> 
+                <input type="button" value="2" class="calc-btn" onclick="window.${instanceName}.dis('2')"/> 
+                <input type="button" value="3" class="calc-btn" onclick="window.${instanceName}.dis('3')"/> 
+                <input type="button" value="/" class="calc-btn" onclick="window.${instanceName}.dis('/')"/> 
+
+                <input type="button" value="4" class="calc-btn" onclick="window.${instanceName}.dis('4')"/> 
+                <input type="button" value="5" class="calc-btn" onclick="window.${instanceName}.dis('5')"/> 
+                <input type="button" value="6" class="calc-btn" onclick="window.${instanceName}.dis('6')"/> 
+                <input type="button" value="-" class="calc-btn" onclick="window.${instanceName}.dis('-')"/> 
+
+                <input type="button" value="7" class="calc-btn" onclick="window.${instanceName}.dis('7')"/> 
+                <input type="button" value="8" class="calc-btn" onclick="window.${instanceName}.dis('8')"/> 
+                <input type="button" value="9" class="calc-btn" onclick="window.${instanceName}.dis('9')"/> 
+                <input type="button" value="+" class="calc-btn" onclick="window.${instanceName}.dis('+')"/> 
+
+                <input type="button" value="." class="calc-btn" onclick="window.${instanceName}.dis('.')"/> 
+                <input type="button" value="0" class="calc-btn" onclick="window.${instanceName}.dis('0')"/> 
+                <input type="button" value="=" class="calc-btn" onclick="window.${instanceName}.solve()"/> 
+                <input type="button" value="*" class="calc-btn" onclick="window.${instanceName}.dis('*')"/> 
+            </div> 
+        `,
+        height: 280, 
+        width: 235,
+        oncreate: function() {
+
+            window[instanceName] = {
+                dis: function(val) { 
+                    const res = document.getElementById(`calc-result-${calcId}`);
+                    if(res) res.value += val;
+                }, 
+                solve: function() { 
+                    const res = document.getElementById(`calc-result-${calcId}`);
+                    if(!res || res.value.trim() === "") return;
+                    try { 
+
+                        let y = eval(res.value); 
+                        res.value = Number(y).toString(); 
+                    } catch (e) { 
+                        res.value = "Error"; 
+                    } 
+                }, 
+                ent: function(i) {
+                    const res = document.getElementById(`calc-result-${calcId}`);
+                    if(res) res.value += i;
+                },
+                clr: function() { 
+                    const res = document.getElementById(`calc-result-${calcId}`);
+                    if(res) res.value = ""; 
+                }
+            };
+
+            applySystemConfig(this.id);
+        },
+
+        onclose: function() {
+            if (window[instanceName]) {
+                delete window[instanceName];
+            }
+        }
+    });
+});
+
+
+addIcon(("settings"), icns.settings, function(){
+if (document.querySelector(".winbox.settings")) return;
+    new wm(_('settings'),{x: "center",y: "center",
+     icon: icns.settings, class: ['no-full', wbtheme, "settings"], 
      html: `
 <!DOCTYPE html>
 <html lang="en">
@@ -5080,9 +5007,11 @@ main {
     <button class="sidebar-handle" id="sidebarToggle">≡</button>
 
     <a class="sidebar-tab" data-page="general" data-i18n="general"></a>
-    <a class="sidebar-tab" data-page="drivers" data-i18n="drivers"></a>
+    <a class="sidebar-tab" data-page="usage" data-i18n="usage"></a>
+
     <div class="sidebar-separator"></div>
-    
+
+    <a class="sidebar-tab" data-page="drivers" data-i18n="drivers"></a>
     <a class="sidebar-tab" data-page="display" data-i18n="display"></a>
     <a class="sidebar-tab" data-page="keyboard" data-i18n="keyboard"></a>
 
@@ -5130,6 +5059,17 @@ main {
 
     </div>
 
+          <div class="page" data-page="usage" hidden>
+
+        <h2 data-i18n="usage"></h2>
+        <label for='allowUsage' data-i18n="allow_usage"></label>
+        <input id="allowUsage" type="checkbox"> 
+
+          <div style="padding-top:15px;" id="usage-list" class="usage-list"></div>
+
+    </div>
+
+
 <!-- DISPLAY -->
 <div class="page" data-page="display" hidden>
     <div style="display: flex; align-items: flex-start; gap: 20px;">
@@ -5137,6 +5077,11 @@ main {
         <!-- Лівий блок: заголовок та опис -->
         <div style="flex:1;">
             <h2 data-i18n="display"></h2>
+     <div class="setting-row" style="margin-top: 15px; display: flex; justify-content: flex-start; gap: 10px; width: max-content;">
+    <label for="bgClockShow" data-i18n="show_bg_clock"></label>
+      <input id="bgClockShow" type="checkbox">
+</div>
+
         </div>
 
         <!-- Правий блок: зображення та select -->
@@ -5184,10 +5129,12 @@ main {
     
 
 
-    <!-- ICONS -->
+    <!-- FILES -->
     <div class="page" data-page="files" hidden>
         <h2 data-i18n="files"></h2>
-        <div id="icns_cont" style="width:100%;background-color: gray;"></div>
+        <label for='showHidden' data-i18n="show_hidden"></label>
+        <input id="showHidden" type="checkbox"> 
+
     </div>
 
     <!-- THEMES -->
@@ -5204,7 +5151,7 @@ main {
     <div class="page" data-page="taskbar" hidden>
         <h2 data-i18n="taskbar"></h2>
         <div class="setting-row">
-                <span class="setting-label"  data-i18n="taskbar_position">:l</span>
+                <span class="setting-label"  data-i18n="taskbar_position"></span>
                 <select id="taskbarPosSelect">
                     <option data-i18n="bottom" value="bt">Bottom</option>
                     <option data-i18n="top" value="top">Top</option>
@@ -5244,20 +5191,17 @@ main {
      ,
 oncreate: function() {
 
-// Знаходимо всі чекбокси в контейнері налаштувань
   const checkboxes = document.querySelectorAll('.format-group input[type="checkbox"]');
 
   checkboxes.forEach(cb => {
     const unit = cb.dataset.unit;
-    
-    // Перевіряємо, чи є такий ключ у нашому об'єкті
-    // Використовуємо hasOwnProperty, щоб не пропустити булеві значення (як hour12: false)
+
+
     if (localeFormat.hasOwnProperty(unit)) {
       cb.checked = true;
-      
-      // Додаткова перевірка: якщо значення в об'єкті відрізняється від value чекбокса
-      // (наприклад, в об'єкті "numeric", а в чекбоксі "2-digit"), 
-      // ви можете оновити cb.value, але зазвичай достатньо просто активувати чекбокс.
+
+
+
     } else {
       cb.checked = false;
     }
@@ -5273,7 +5217,6 @@ function getLocaleFormat() {
       const unit = cb.dataset.unit;
       let value = cb.value;
 
-      // Перетворюємо рядки "true"/"false" у булеві значення
       if (value === "true") value = true;
       if (value === "false") value = false;
 
@@ -5285,97 +5228,14 @@ function getLocaleFormat() {
   return options;
 }
 
-
-  /*
-const addItems = document.getElementById("addItems");
-const addItemL = document.getElementById("addItemL");
-const addItemR = document.getElementById("addItemR");
-const taskbarItems = document.getElementById("taskbarItems");
-
-	renderAval = (t) => {
-if (addItems) addItems.innerHTML = '';
-if (taskbarItems) taskbarItems.innerHTML = '';
-setTimeout(() => {
-	const activePanelItems = parent.getPanelApplets();
-if (Array.isArray(activePanelItems)) {
-    activePanelItems.forEach(ap => {
-        const el = document.createElement("option");
-        el.innerText = ap.name;
-        el.value = ap.itter;
-        taskbarItems.appendChild(el);
-    });
-	taskbarItems.size = taskbarItems.children.length;	
-}
-	
-	
-        const aval = parent.getApplets();
-        console.log("Довжина після затримки:", aval.length);
-        
-        if (Array.isArray(aval) && aval.length > 0) {
-            aval.forEach(ap => {
-    // Шукаємо, чи є вже такий ID серед активних
-    const isAlreadyOnPanel = activePanelItems.find(active => active.id === ap.id && ap.id != null);
-
-    if (!isAlreadyOnPanel) {
-        const el = document.createElement("option");
-        el.innerText = ap.name;
-        el.value = ap.itter;
-        addItems.appendChild(el);
-    }else{
-	console.warn(ap.id)
-	}
-});
-        }
-    }, t);
-	}
-	
-	renderAval(100);
-
-	taskbarItems.addEventListener('change', (event) => {
-    // Access the newly selected value
-    const selectedValue = event.target.value;
-	const el = parent.getPanelApplets().find(el=> el.itter==selectedValue);
-		if (!el) return;
-		removePanelItem(el.id)
-		renderAval(100);
-		
-});
-	const addItemWrapper = function(lr) {
-	const toAdd = addItems.value;
-	const el = parent.getApplets().find(el=> el.itter==toAdd);
-		console.log(el)
-		let rslt;
-		if (el.tag){
-	 rslt = document.createElement(el.tag);
-	rslt.id = el.id;
-		rslt.classList = el.class;
-			if (rslt.innerText){
-		rslt.innerText = el.inner;
-			}else{
-				rslt.src = el.src;
-			}
-		}else{
-			rslt = document.createElement("span");
-			rslt.outerHTML = el.outer;
-		}
-		addPanelItem(rslt, lr);
-		renderAval(100);
-	}
-	
-// Правильно:
-addItemL.onclick = () => addItemWrapper(0);
-addItemR.onclick = () => addItemWrapper(1);
-*/
 const thmSelect = document.getElementById("themeSelect");
 const allFiles = parent.getFs();
 const themeFiles = allFiles.filter(f => f.name.toLowerCase().endsWith(".theme"));
 
 const parser = new ThemeParser(); 
 
-// 1. Очищуємо список ОДИН РАЗ перед циклом
 thmSelect.innerHTML = `<option value="none">Glass (Default)</option>`;
 
-// 2. Додаємо файли
 themeFiles.forEach(f => {
     const el = document.createElement("option");
     el.value = f.name;
@@ -5387,13 +5247,12 @@ themeFiles.forEach(f => {
     thmSelect.appendChild(el);
 });
 
-// 3. Обробник onchange залишається майже без змін
 thmSelect.onchange = async () => {
     const selectedName = thmSelect.value;
     
     if (selectedName === "none") {
         localStorage.removeItem("theme");
-        // Логіка скидання до Glass...
+
         const reboot = await confirm(_("confirm_set_theme"));
         if (reboot) safeShutdown({ restart: true });
         return;
@@ -5476,8 +5335,7 @@ langSelect.onchange = () => {
     dateLang = date;
     loadLanguage(lang, date);
 
-    // Затримка не обов’язкова, якщо loadLanguage синхронний
-    // Але якщо переклад завантажується асинхронно, можна використати setTimeout
+
     setTimeout(() => {
         updateTexts();      // оновлюємо тексти
         initLanguageSelect(); // щоб select відобразив актуальне значення
@@ -5501,7 +5359,149 @@ async function showPage(name) {
     });
 
     updateTexts(); // на випадок якщо вкладка нова
-    if (name == "drivers"){
+if (name == "usage") {
+  const usageH2 = document.querySelector('h2[data-i18n="usage"]');
+    allowUsage = document.getElementById("allowUsage");
+    allowUsage.checked = allowTelemetry;
+    
+    allowUsage.onchange = () => {
+        allowTelemetry = allowUsage.checked;
+        localStorage.setItem("allowTelemetry", allowUsage.checked);
+
+
+        if (!allowTelemetry) {
+            if (window.usageIntervalId) {
+                clearInterval(window.usageIntervalId);
+                window.usageIntervalId = null;
+            }
+            document.getElementById('usage-list').innerHTML = '';
+            
+            if (usageH2) usageH2.textContent = _("usage");
+        } else {
+
+            updateUsageTab();
+            if (!window.usageIntervalId) {
+                window.usageIntervalId = setInterval(updateUsageTab, 2000);
+            }
+        }
+    };
+
+
+    const formatTime = (seconds) => {
+        const fmtSec = new Intl.NumberFormat(dateLang, { style: "unit", unit: "second", unitDisplay: "short" });
+        const fmtMin = new Intl.NumberFormat(dateLang, { style: "unit", unit: "minute", unitDisplay: "short" });
+        const fmtHr  = new Intl.NumberFormat(dateLang, { style: "unit", unit: "hour",   unitDisplay: "short" });
+
+        if (seconds < 60) return fmtSec.format(seconds);
+        
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return fmtMin.format(minutes);
+        
+        const hours = Math.floor(minutes / 60);
+        const remMinutes = minutes % 60;
+        
+        if (remMinutes === 0) return fmtHr.format(hours);
+        return `${fmtHr.format(hours)} ${fmtMin.format(remMinutes)}`;
+    };
+
+    const updateUsageTab = () => {
+
+        if (allowTelemetry != true) return;
+
+        const rawData = localStorage.getItem('.usageData');
+        const usageList = document.getElementById('usage-list');
+
+        if (!usageList) return; // Захист на випадок, якщо DOM уже знищено
+
+        if (!rawData) {
+            usageList.innerHTML = ``;
+            usageH2.innerText = _("usage");
+            return;
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const stats = JSON.parse(rawData);
+        const todayStats = stats[today] || {};
+        const appEntries = Object.entries(todayStats);
+
+        if (appEntries.length === 0) {
+            usageList.innerHTML = ``;
+            usageH2.textContent = _("usage");
+            return;
+        }
+
+        let totalSeconds = 0;
+        let maxSeconds = 0;
+
+        appEntries.forEach(([_, seconds]) => {
+            totalSeconds += seconds;
+            if (seconds > maxSeconds) maxSeconds = seconds;
+        });
+
+        usageH2.innerText = `${_("usage")} - ${formatTime(totalSeconds)}`;
+        usageList.innerHTML = '';
+
+        appEntries.sort((a, b) => b[1] - a[1]);
+
+        appEntries.forEach(([appName, seconds]) => {
+            const item = document.createElement('div');
+            item.className = 'usage-item';
+
+            const info = document.createElement('div');
+            info.className = 'usage-info';
+            info.style.display = 'flex';
+            info.textContent = _(appName) + " - " + formatTime(seconds);
+
+            const progress = document.createElement('progress');
+            progress.className = 'usage-bar';
+            progress.max = maxSeconds;
+            progress.value = seconds;
+
+            item.appendChild(info);
+            item.appendChild(progress);
+            usageList.appendChild(item);
+        });
+    };
+
+    updateUsageTab();
+
+    if (window.usageIntervalId) clearInterval(window.usageIntervalId);
+
+    if (allowTelemetry === true) {
+        window.usageIntervalId = setInterval(updateUsageTab, 2000);
+    }
+
+
+    if (this && typeof this.onclose === 'function') {
+        const originalOnClose = this.onclose;
+        this.onclose = function() {
+            if (window.usageIntervalId) {
+                clearInterval(window.usageIntervalId);
+                window.usageIntervalId = null;
+            }
+            originalOnClose.apply(this, arguments);
+        };
+    } else if (this) {
+
+        this.onclose = function() {
+            if (window.usageIntervalId) {
+                clearInterval(window.usageIntervalId);
+                window.usageIntervalId = null;
+            }
+        };
+    }
+}
+    if (name == "files"){
+        showHiddenCheck = document.getElementById("showHidden");
+showHiddenCheck.checked = filesShowHidden;
+showHiddenCheck.onchange = () => {
+    
+    filesShowHidden = showHiddenCheck.checked;
+        localStorage.setItem("config/files", JSON.stringify(filesSettings))
+    
+}
+    }
+    else if (name == "drivers"){
 
 const container = document.getElementById("navigator_list");
 container.innerHTML = "";
@@ -5536,7 +5536,7 @@ const d = await getDisks();
 d.forEach(dsk => {
   if (dsk.type != "localStorage") {
     const li = document.createElement("li");
-    // Замість <b> використовуємо <span style="font-weight:bold;">
+
     li.innerHTML = `<b>${dsk.name}</b>${dsk.type}`;
     container1.appendChild(li);
   }
@@ -5548,14 +5548,30 @@ d.forEach(dsk => {
     if (name == "keyboard"){
         
     setTimeout(() => {
-        // змінюємо картинку
+
         kbrdImg.src = "assets/" + keyboardLayoutSelect.value + "_kbrd.jpg";
-        // fade in
+
         kbrdImg.style.opacity = 1;
     }, 250); // половина часу transition
-    }else if (name == "display"){
+
+    }
+
+    if (name == "display"){
+      bgClockShow = document.getElementById("bgClockShow");
+bgClockShow.checked = bgClock;
+bgClockShow.onchange = () => {
+    
+    bgClock = bgClockShow.checked;
+        localStorage.setItem("backgroundClock", JSON.stringify(bgClock));
+
+        const desktopFore = document.getElementById("desktop-fore");
+        if (desktopFore) {
+            desktopFore.style.display = bgClock ? "flex" : "none";
+        }
+    
+}
         dispImg.classList = [];
-// змінюємо картинку
+
 if (screenTypeSelect.value == "lcd") {
     /*
             box-shadow: 
@@ -5583,13 +5599,10 @@ tabs.forEach(tab => {
 
 const keyboardLayoutSelect = document.getElementById("keyboardLayoutSelect");
 
-// Ініціалізація: можна взяти з  якщо є
 if(currentKeyboardLayout) {
     keyboardLayoutSelect.value = currentKeyboardLayout;
 }
 
-
-// Зміна набору клавіш
 keyboardLayoutSelect.onchange = () => {
     
 
@@ -5597,12 +5610,11 @@ keyboardLayoutSelect.onchange = () => {
     chShortcuts(keyboardLayoutSelect.value);
     localStorage.setItem("currentKeyboardLayout",keyboardLayoutSelect.value );
 
-    // fade out
     kbrdImg.style.opacity = 0;
     setTimeout(() => {
-        // змінюємо картинку
+
         kbrdImg.src = "assets/" + keyboardLayoutSelect.value + "_kbrd.jpg";
-        // fade in
+
         kbrdImg.style.opacity = 1;
     }, 250); // половина часу transition
 };
@@ -5614,12 +5626,10 @@ keyboardLayoutSelect.onchange = () => {
 screenTypeSelect.onchange = () => {
 
     displayType = screenTypeSelect.value;
-    
 
-    // fade out
     setTimeout(() => {
         dispImg.classList = [];
-        // змінюємо картинку
+
         if (screenTypeSelect.value == "lcd"){
             /*
             box-shadow: 
@@ -5650,221 +5660,280 @@ updateTexts();
       ,height:215, width:200, minheight:200, minwidth:200 });
 })
 
-addIcon(("terminal_title"), icns.term, function(){
-    new wm(_('terminal_title'),{x: "center",y: "center",
-    icon: icns.term,
-    class: ['no-full', wbtheme],
-    html: `
-
-<div style="width:100%; height:100%;  background:#000; color:#fff; display:flex; flex-direction:column; user-select:text !important;">
-  <div id="tout" class="output" style="flex-grow:1; overflow-y:auto; padding:10px; white-space:pre-wrap; font-family:monospace !important;"></div>
-
-
-
-  
-  <input 
-    style="font-family:monospace; background:#000; color:#fff; border:none; border-top:1px solid #999; padding:8px; width:100%; box-sizing:border-box; outline:none;" 
-    type="text" 
-    onchange="
-      const out=document.getElementById('tout');
-      const cmd=document.createElement('div');
-      cmd.textContent='$> ' + this.value;
-      out.appendChild(cmd);
-      try {
-        const r=eval(this.value);
-        if (r !== undefined) {
-          const res=document.createElement('div');
-          res.textContent=(typeof r==='object' ? JSON.stringify(r, null, 2) : r);
-          out.appendChild(res);
-        }
-      } catch(e) {
-        const err=document.createElement('div');
-        err.style.color='#f00';
-        err.textContent='Error: ' + e.message;
-        out.appendChild(err);
-      }
-      this.value='';
-      out.scrollTop=out.scrollHeight;
-      
-      
-    " 
-    id="input"
-    autofocus 
-  />
-</div>
-    `,
-    oncreate: function () {
-        const out=document.getElementById('tout');
-const nativeDir = console.dir;
-window.console = {
-    dir: (obj) => {
-        const keys = Object.getOwnPropertyNames(obj);
-
-    for (const key of keys) {
-        const value = obj[key];
-        const type = typeof value;
-
-        console.log(`${key} : ${type}`);
-    }
-    },
-    log: (str,msg) => {
-        const msg1=document.createElement('div');
-        msg1.style.color='#fff';
-        msg1.textContent = ansiToHtml(str + (msg ? " " + msg : ""))
-        out.appendChild(msg1);
-       msg1.scrollIntoView({ behavior: 'smooth' });
-    },
-    
-warn: (str, msg) => {
-    const warnMsg = document.createElement('div');
-    warnMsg.style.color = '#f90';
-    // Виправлено: дужки навколо тернарного оператора
-    warnMsg.textContent = str + (msg ? " " + msg : "");
-    out.appendChild(warnMsg); 
-    warnMsg.scrollIntoView({ behavior: 'smooth' });
-},
-
-error: (e, msg) => {
-    const err = document.createElement('div');
-    err.style.color = '#f00';
-    // Виправлено: дужки навколо тернарного оператора
-    err.textContent = e + (msg ? " " + msg : "");
-    out.appendChild(err);
-    err.scrollIntoView({ behavior: 'smooth' });
-},
-table: (data) => {
-    if (!data || typeof data !== 'object') {
-        window.console.log(data);
-        return;
-    }
-
-    const table = document.createElement('table');
-    table.style.borderCollapse = 'collapse';
-    table.style.width = '100%';
-    table.style.margin = '10px 0';
-    table.style.color = '#fff';
-    table.style.border = '1px solid #444';
-    table.style.fontFamily = 'monospace';
-
-    // Отримуємо заголовки (ключі об'єктів)
-    const isArray = Array.isArray(data);
-    const sample = isArray ? data[0] : data[Object.keys(data)[0]];
-    const headers = ['(index)', ...Object.keys(sample || {})];
-
-    // Створюємо заголовок таблиці (thead)
-    const thead = table.createTHead();
-    const headerRow = thead.insertRow();
-    headers.forEach(text => {
-        const th = document.createElement('th');
-        th.textContent = text;
-        th.style.border = '1px solid #444';
-        th.style.padding = '8px';
-        th.style.backgroundColor = '#222';
-        headerRow.appendChild(th);
-    });
-
-    // Створюємо тіло таблиці (tbody)
-    const tbody = table.createTBody();
-    const rows = isArray ? data : Object.entries(data);
-
-    for (const [key, val] of Object.entries(data)) {
-        const row = tbody.insertRow();
-        const indexCell = row.insertCell();
-        indexCell.textContent = key;
-        indexCell.style.border = '1px solid #444';
-        indexCell.style.padding = '4px 8px';
-        indexCell.style.fontWeight = 'bold';
-
-        // Додаємо значення для кожного стовпця
-        headers.slice(1).forEach(header => {
-            const cell = row.insertCell();
-            const cellValue = (val && typeof val === 'object') ? val[header] : val;
-            cell.textContent = cellValue !== undefined ? cellValue : '';
-            cell.style.border = '1px solid #444';
-            cell.style.padding = '4px 8px';
-        });
-    }
-
-    out.appendChild(table);
-    table.scrollIntoView({ behavior: 'smooth' });
-}
-}
-function ansiToHtml(str){
-  const colors = {
-    30:"#000",
-    31:"#f55",
-    32:"#5f5",
-    33:"#ff5",
-    34:"#59f",
-    35:"#f5f",
-    36:"#5ff",
-    37:"#fff"
-  };
-
-  let result="";
-  let color=null;
-  let parts;
-try{
-   parts=str.split(/\x1b\[(\d+)m/);
-
-
-  for(let i=0;i<parts.length;i++){
-    if(i%2===1){
-      const code=parts[i];
-      if(code==="0") color=null;
-      else color=colors[code] || color;
-    } else {
-      if(color){
-        result+=`<span style="color:${color}">${parts[i]}</span>`;
-      } else {
-        result+=parts[i];
-      }
-    }
-  }
-} catch {}
-
-  return result;
-}
-
-
 let history = [];
-let historyIndex = -1;
-const input=document.getElementById('input')
-input.onkeydown = (e) => {
-    if (e.key === "ArrowUp") {
-        if (historyIndex < history.length - 1) {
-            historyIndex++;
-            input.value = history[history.length - 1 - historyIndex];
-        }
-    } else if (e.key === "ArrowDown") {
-        if (historyIndex > 0) {
-            historyIndex--;
-            input.value = history[history.length - 1 - historyIndex];
-        } else {
-            historyIndex = -1;
-            input.value = "";
-        }
+
+window.ActiveTerminals = {
+    currentActiveId: null,
+    instances: {},
+
+    initHook: function(originalConsole) {
+        const methods = ['log', 'warn', 'error', 'dir', 'table'];
+        methods.forEach(method => {
+            window.console[method] = (...args) => {
+
+                if (this.currentActiveId && this.instances[this.currentActiveId]) {
+                    this.instances[this.currentActiveId][method](...args);
+                }
+
+                originalConsole[method](...args);
+            };
+        });
     }
 };
 
-    },
-    onclose: function (){
-        redefineAdaptations()
-        
-    },
-    minheight: 200,
-    minwidth: 250,
-    width: 250,
-    height: 300,
+if (!window.console._hooked) {
+    const originalConsole = { ...window.console };
+    window.ActiveTerminals.initHook(originalConsole);
+    window.console._hooked = true;
+}
+
+addIcon(("terminal"), icns.term, function(){
+  const termId = Date.now();
+new wm(_('terminal'), {
+        x: "center", y: "center",
+        icon: icns.term,
+        class: ['no-full', wbtheme, 'winbox-terminal', 'tra'],
+        html: `
+<div class="output-container" style="width:100%; height:100%; background:rgba(0,0,0,0.5); color:#fff; display:flex; flex-direction:column; user-select:text !important;">
+  <div id="tout-${termId}" style="flex-grow:1; overflow-y:auto; padding:10px; white-space:pre-wrap; font-family:monospace !important;"></div>
+  <input  
+    id="term-input-${termId}"
+    style="font-family:monospace !important; background:rgba(0,0,0,0.5); color:#fff; border:none; border-top:1px solid #999; padding:8px; width:100%; box-sizing:border-box; outline:none;" 
+    type="text" 
+    autofocus 
+  />
+</div>
+        `,
+        oncreate: function () {
+            const out = document.getElementById(`tout-${termId}`);
+            const input = document.getElementById(`term-input-${termId}`);
+            
+            let historyIndex = -1;
+
+            function appendAnsiText(targetElement, rawStr, defaultColor = '#fff') {
+                const colors = {
+                    30:"#000", 31:"#f55", 32:"#5f5", 33:"#ff5",
+                    34:"#59f", 35:"#f5f", 36:"#5ff", 37:"#fff"
+                };
+                const wrapper = document.createElement('div');
+                wrapper.style.color = defaultColor;
+                const parts = String(rawStr).split(/\x1b\[(\d+)m/);
+                let currentColor = null;
+
+                for (let i = 0; i < parts.length; i++) {
+                    if (i % 2 === 1) {
+                        const code = parts[i];
+                        if (code === "0") currentColor = null;
+                        else currentColor = colors[code] || currentColor;
+                    } else {
+                        if (parts[i]) {
+                            const span = document.createElement('span');
+                            if (currentColor) span.style.color = currentColor;
+                            span.textContent = parts[i];
+                            wrapper.appendChild(span);
+                        }
+                    }
+                }
+                targetElement.appendChild(wrapper);
+                wrapper.scrollIntoView({ behavior: 'smooth' });
+            }
+
+            const terminalConsole = {
+            clear: () => {
+                out.innerHTML = "";
+            },
+                dir: (obj) => {
+                    if (!obj) return;
+                    try {
+                        const keys = Object.getOwnPropertyNames(obj);
+                        for (const key of keys) {
+                            terminalConsole.log(`${key} : ${typeof obj[key]}`);
+                        }
+                    } catch(e) { terminalConsole.error(e.message); }
+                },
+                log: (...args) => {
+                    const processed = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(" ");
+                    appendAnsiText(out, processed, '#fff');
+                },
+                warn: (...args) => {
+                    const processed = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(" ");
+                    appendAnsiText(out, processed, '#f90');
+                },
+                error: (...args) => {
+                    const processed = args.map(arg => arg instanceof Error ? arg.message : (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(" ");
+                    appendAnsiText(out, processed, '#f00');
+                },
+                table: (data) => {
+                    if (!data || typeof data !== 'object') {
+                        terminalConsole.log(data);
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    table.style.borderCollapse = 'collapse';
+                    table.style.width = '100%';
+                    table.style.margin = '10px 0';
+                    table.style.color = '#fff';
+                    table.style.border = '1px solid #444';
+                    table.style.fontFamily = 'monospace';
+
+                    const isArray = Array.isArray(data);
+                    const sample = isArray ? data[0] : data[Object.keys(data)[0]];
+                    const headers = ['(index)', ...Object.keys(sample || {})];
+
+                    const thead = table.createTHead();
+                    const headerRow = thead.insertRow();
+                    headers.forEach(text => {
+                        const th = document.createElement('th');
+                        th.textContent = text;
+                        th.style.border = '1px solid #444';
+                        th.style.padding = '8px';
+                        th.style.backgroundColor = '#222';
+                        headerRow.appendChild(th);
+                    });
+
+                    const tbody = table.createTBody();
+                    for (const [key, val] of Object.entries(data)) {
+                        const row = tbody.insertRow();
+                        const indexCell = row.insertCell();
+                        indexCell.textContent = key;
+                        indexCell.style.border = '1px solid #444';
+                        indexCell.style.padding = '4px 8px';
+                        indexCell.style.fontWeight = 'bold';
+
+                        headers.slice(1).forEach(header => {
+                            const cell = row.insertCell();
+                            const cellValue = (val && typeof val === 'object') ? val[header] : val;
+                            cell.textContent = cellValue !== undefined ? cellValue : '';
+                            cell.style.border = '1px solid #444';
+                            cell.style.padding = '4px 8px';
+                        });
+                    }
+                    out.appendChild(table);
+                    table.scrollIntoView({ behavior: 'smooth' });
+                }
+            };
+
+            window.ActiveTerminals.instances[termId] = terminalConsole;
+
+            input.onfocus = () => {
+                window.ActiveTerminals.currentActiveId = termId;
+            };
+
+            const executeCommand = async () => {
+                const val = input.value.trim();
+                if (!val) return;
+
+                history.push(val);
+                historyIndex = -1;
+
+                const cmd = document.createElement('div');
+                cmd.style.color = '#aaa';
+                cmd.textContent = '$> ' + val;
+                out.appendChild(cmd);
+input.value = '';
+
+                window.ActiveTerminals.currentActiveId = termId;
+
+                try {
+
+                    const runner = new Function('console', 'code', 'return (async () => { return eval(code); })()');
+                    const r = await runner(terminalConsole, val);
+
+                    if (r !== undefined) {
+                        const res = document.createElement('div');
+                        res.style.color = '#fff';
+                        
+                        if (r instanceof File || r instanceof Blob) {
+                            const fileMeta = {
+                                "[Class]": r.constructor.name,
+                                name: r.name || "Blob_Data",
+                                size: (r.size / 1024).toFixed(2) + " KB",
+                                type: r.type || "application/octet-stream",
+                                lastModified: r.lastModified ? r.lastModified : "N/A"
+                            };
+                            res.textContent = JSON.stringify(fileMeta, null, 2);
+                        } else if (Array.isArray(r) && (r[0] instanceof File || r[0] instanceof Blob)) {
+                            const arrayMeta = r.map((f, idx) => ({
+                                index: idx,
+                                name: f.name,
+                                size: f.size,
+                                type: f.type,
+                                lastModified: f.lastModified ? f.lastModified : "N/A"
+                            }));
+                            res.textContent = "Can't display JS file objects directly. Displaying adapted:\nStorage: " + (typeof DB_NAME !== 'undefined' ? DB_NAME : 'N/A') + "\nLast Storage: " + (typeof LAST_DB !== 'undefined' ? LAST_DB : 'N/A') + "\n" + JSON.stringify(arrayMeta, null, 2);
+                        } else if (typeof apps !== 'undefined' && r === apps) {
+                            const cleanedAppsForLog = apps.map(app => {
+                                if (app.icon && app.icon.startsWith("data:")) {
+                                    return { ...app, icon: "BASE64 image omitted" };
+                                }
+                                return app; 
+                            });
+                            res.textContent = JSON.stringify(cleanedAppsForLog, null, 2);
+                        } else {
+                            res.textContent = typeof r === 'object'
+                                ? JSON.stringify(r, null, 2)
+                                : (typeof r === 'string' && r.includes(' ') ? _(r) : String(r));
+                        }
+                        out.appendChild(res);
+                    }
+                } catch(e) {
+                    const err = document.createElement('div');
+                    err.style.color = '#f55';
+                    err.textContent = 'Error: ' + e.message;
+                    out.appendChild(err);
+                }
+
+                
+                out.scrollTop = out.scrollHeight;
+            };
+
+            input.onkeydown = (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    executeCommand();
+                } else if (e.key === "ArrowUp") {
+                    if (historyIndex < history.length - 1) {
+                        historyIndex++;
+                        input.value = history[history.length - 1 - historyIndex];
+                    }
+                    e.preventDefault();
+                } else if (e.key === "ArrowDown") {
+                    if (historyIndex > 0) {
+                        historyIndex--;
+                        input.value = history[history.length - 1 - historyIndex];
+                    } else {
+                        historyIndex = -1;
+                        input.value = "";
+                    }
+                    e.preventDefault();
+                }
+            };
+            
+            setTimeout(() => { if(input) input.focus(); }, 50);
+        },
+        onclose: function () {
+
+            delete window.ActiveTerminals.instances[termId];
+            if (window.ActiveTerminals.currentActiveId === termId) {
+                window.ActiveTerminals.currentActiveId = null;
+            }
+        },
+        minheight: 200, minwidth: 250,
+        width: 320, height: 350,
+    });
 });
+
+
+addIcon(("web_browser"), icns.web, function(){
+    new wm(_('web_browser'),{x: "center",y: "center",icon: icns.web,class: ['no-full', wbtheme],url: 'apps/web.html',height:400,width:600,minheight: 200,minwidth:400,oncreate: function() {
+            applySystemConfig(this.id)
+          }});
 })
 
-addIcon(("web_browser_title"), icns.web, function(){
-    new wm(_('web_browser_title'),{x: "center",y: "center",icon: icns.web,class: ['no-full', wbtheme],url: 'apps/web.html',height:400,width:600,minheight: 200,minwidth:400});
-})
-
-addIcon(("task_mgr_title"), icns.tasks, function(){
-    new wm(_('task_mgr_title'),{x: "center",y: "center",icon: icns.tasks,class: ['no-full', wbtheme],url: 'apps/resmon.html',height:600,width:800,minheight: 200,minwidth:400});
+addIcon(("task_mgr"), icns.tasks, function(){
+    new wm(_('task_mgr'),{x: "center",y: "center",icon: icns.tasks,class: ['no-full', wbtheme],url: 'apps/resmon.html',height:600,width:800,minheight: 200,minwidth:400, oncreate: function() {
+            applySystemConfig(this.id)
+          }});
 })
 
 async function node(fileName) {
@@ -5873,20 +5942,20 @@ async function node(fileName) {
      file = fs.find(f => f.name === fileName);
     if (!file) console.error( `node: can't open file '${fileName}'`);
 }else if (typeof fileName == "File"){file = fileName}
-    // 1. Отримуємо текст коду (важливо для об'єктів File)
+
     let rawCode = "";
     if (file.content) {
         rawCode = file.content;
     } else if (typeof file.text === 'function') {
         rawCode = await file.text(); // Зчитуємо текст з об'єкта File
     }
-    // Додайте це всередину вашого node()
+
 const wsModule = {
   Server: class {
     constructor() {
       this.onconnection = null;
       window.addEventListener("node-ws", e => {
-        // Імітуємо об'єкт клієнта
+
         const client = {
           send: (data) => window.dispatchEvent(new CustomEvent("ui-ws", { detail: data })),
           on: (event, cb) => { if(event === 'message') this.onmessage = cb; }
@@ -5922,7 +5991,7 @@ class EventEmitter {
             existingFile.content = data;
             saveFileToDB(existingFile); // Ваша функція збереження в IndexedDB
         } else {
-            // Логіка створення нового файлу, якщо шлях не знайдено
+
             const newFile = new File([data], path,{type: "text/plain"} )
                 
                   fs.push(newFile);
@@ -5933,7 +6002,7 @@ class EventEmitter {
         return true;
     },
     readdirSync: (path) => {
-        // Повертає список файлів у папці
+
         return fs.filter(f => f.name.startsWith(path))
                  .map(f => f.name);
     },
@@ -5944,13 +6013,12 @@ class EventEmitter {
 
     
     const require = (name) => {
-    // 1. Мапінг системних модулів
+
     if (name === "fs") return virtualFS;
     if (name === "path") return pathModule;
     if (name === "events") return { EventEmitter };
     if (name === "ws") return wsModule;
 
-    // 2. Нормалізація шляху (для ./tl -> tl)
     const cleanName = name.replace('./', '').split('/').pop().replace('.js', '');
     const modulePath = `system/node_modules/${cleanName}.js`;
     
@@ -5958,28 +6026,30 @@ class EventEmitter {
     if (!moduleFile) throw new Error(`Cannot find module '${name}' at ${modulePath}`);
 
     const mContent = moduleFile.content || "";
-    
-    // Створюємо контекст
+
     const module = { exports: {} };
     
     try {
-        // Виконуємо код модуля. 
-        // Оскільки ми зберігаємо його як "return (function...)", 
-        // результат виконання цієї Function буде самою функцією модуля.
-        const exported = new Function('require', 'module', 'exports', mContent)(require, module, module.exports);
-        
-        // Якщо функція повернула значення (як у нашому випадку з return) — використовуємо його.
-        // Якщо ні — використовуємо module.exports.
-        return exported || module.exports;
-    } catch (e) {
-        console.error(`Require error in ${name}:`, e);
-        return {};
-    }}
+    const exported = new Function('require', 'module', 'exports', mContent)(require, module, module.exports);
+
+    const result = exported || module.exports;
+
+    // Якщо модуль повернув об'єкт з дефолтним експортом, 
+    // і більше нічого немає — повертаємо саму функцію/клас
+    if (result && result.default && Object.keys(result).length === 1) {
+        return result.default;
+    }
+
+    return result;
+} catch (e) {
+    console.error(`Require error in ${name}:`, e);
+    return {};
+}}
 
 
     try {
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-        // Передаємо підготовлений rawCode
+
         try {
     new Function(rawCode); // Спроба просто скомпілювати код
 } catch (e) {
@@ -6001,24 +6071,21 @@ class EventEmitter {
 }
 
 async function gitClone(url, branch = "main") {
-  // 1. Формуємо URL для завантаження
+
   let downloadUrl = url.includes("zipball") ? url : `${url}/zipball/${branch}`;
   const repoName = url.split("/").pop();
 
   try {
     console.log(`Cloning into ${repoName} (branch: ${branch})...`);
     let response = await fetch(downloadUrl);
-    
-    // 2. Якщо отримали 404 і ми намагалися завантажити "main", пробуємо "master"
+
     if (!response.ok && branch === "main") {
       console.warn(`Branch "${branch}" not found (404). Retrying with "master"...`);
       return await gitClone(url, "master"); // Рекурсивний виклик з іншою гілкою
     }
 
-    // Якщо помилка якась інша або "master" теж видав 404 — викидаємо виключення
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-    // 3. Отримуємо Blob та відправляємо на розпаковку
     const blob = await response.blob();
     const repoFile = new File([blob], repoName);
 
@@ -6027,7 +6094,7 @@ async function gitClone(url, branch = "main") {
     
   } catch (error) {
     console.error('Clone failed:', error);
-    // Прокидаємо помилку назовні для ШІ-клієнта
+
     throw error; 
   }
 }
@@ -6036,9 +6103,12 @@ async function gitClone(url, branch = "main") {
 
 const installedpkg = new Set();
 
-// зчитуємо вже встановлені пакети з fs
 function npmUpdate() {
     installedpkg.clear();
+
+    const coreModules = ["fs", "path", "events", "ws"];
+    coreModules.forEach(pkg => installedpkg.add(pkg));
+
     fs.forEach(f => {
         if (f.name.startsWith("system/node_modules/")) {
             const name = f.name.split("/").pop().replace(/\.js$/, "");
@@ -6048,7 +6118,9 @@ function npmUpdate() {
     });
 }
 
-// викликати один раз при старті системи або перед першим npmInstall
+function npmList(){
+console.log(JSON.stringify([...installedpkg], null, 2));
+}
 
 
 async function npmInstall(packageName) {
@@ -6060,16 +6132,17 @@ async function npmInstall(packageName) {
     installedpkg.add(packageName);
 
     try {
-        const metaRes = await fetch(`https://unpkg.com/${packageName}/package.json?module`);
+        const metaRes = await fetch(`https://unpkg.com/${packageName}/package.json`);
         const meta = await metaRes.json();
 
         const mainFile = meta.main || "index.js";
+        const url = `https://unpkg.com/${packageName}/${mainFile}`
         let response, code;
         try{
-         response = await fetch(`https://unpkg.com/${packageName}/${mainFile}`);
+         response = await fetch(url);
          code = await response.text();
         }catch{
-        const url = `https://unpkg.com/${packageName}/${mainFile}`
+        
         const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
             response = await fetch(proxyUrl);
 code = await response.text();
@@ -6112,22 +6185,53 @@ code = await response.text();
     console.log("Completed: "+ packageName);
 }
 
-function purgeDir(dir){
-    const p = dir.endsWith("/") ? dir : dir + "/";
-    const rem = fs.filter(file => file.name.startsWith(p))
-console.log("To be removed:" + rem.length)
+  async function purgeDir(dir) {
+      if (dir.trim() == "") return console.log("Cannot purge root directory.");
 
-    rem.forEach(f => {
-		console.log("Deleting: "+f.name)
-        const i = fs.indexOf(f);
-        if (i > -1){
-            fs.splice(i,1)
-            deleteFile(f.name, null, null);
-             idbWrapper.deleteFile(f.name); 
-			console.log("Deleted: "+f.name)
-        }
-    })
+      const folderPathWithSlash = dir.endsWith("/") ? dir : dir + "/";
+      const folderPathWithoutSlash = dir.endsWith("/") ? dir.slice(0, -1) : dir;
+
+      const rem = fs.filter(file => 
+          file.name.startsWith(folderPathWithSlash) || file.name === folderPathWithoutSlash
+      );
+      
+      console.log("To be removed: " + rem.length);
+
+      for (const f of rem) {
+          console.log("Deleting: " + f.name);
+
+          await deleteFile(f.name);
+          
+          console.log("Deleted: " + f.name);
+      }
+      
+      return true; 
+  }
+
+async function deleteFile(fileName) {
+    const initialLength = fs.length;
+
+    fs = fs.filter(item => item.name !== fileName);
     
+    if (fs.length < initialLength) {
+        try {
+
+            await idbWrapper.deleteFile(fileName); 
+
+            const foundApp = apps.find(app => app.url === fileName);
+            if (foundApp){
+
+
+                apps = apps.filter(app => app.url !== fileName);
+            }
+            
+            return true;
+        } catch (error) {
+            console.error("Помилка видалення з IndexedDB:", error);
+            return false;
+        }
+    } 
+    return false;
 }
 
 
@@ -6138,13 +6242,21 @@ function updateTime() {
     if (timeElementsCollection.length === 0 && dateElementsCollection.length === 0) {
         return;
     }
-    
-    // Форматуємо час і дату, щоб вони були уніфікованими
+
     const now = new Date();
     const currentTime = now.toLocaleTimeString(dateLang, { hour: '2-digit', minute: '2-digit', second: '2-digit'});
-    const currentDate = now.toLocaleDateString(dateLang, { weekday: "short",
-    month: "long",
-    day: "numeric"});
+
+const formatterWeekday = new Intl.DateTimeFormat(dateLang, { weekday: "short" });
+const formatterDay = new Intl.DateTimeFormat(dateLang, { day: "numeric" });
+const formatterMonth = new Intl.DateTimeFormat(dateLang, { month: "long" });
+
+const rawDate = new Intl.DateTimeFormat(dateLang, {
+    weekday: "short",
+    day: "numeric",
+    month: "long"
+}).format(now);
+
+const currentDate = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
     
     Array.from(timeElementsCollection).forEach((t) => {
         t.textContent = currentTime;
@@ -6159,12 +6271,6 @@ function updateTime() {
 
 
 
-
-window.onerror = function(message, source, lineno, colno) {
-console.error(message, source, lineno, colno)
-}
-
-
 document.addEventListener("click", () =>{
 document.querySelectorAll(".menu").forEach(function(item){
 item.style.display="none";
@@ -6174,15 +6280,26 @@ if (event.target.id != "menubtn" && document.querySelector("#sysmenu")){
 document.querySelector("#sysmenu").style.display = "none";}
 })
 document.querySelectorAll("li").forEach(listItem => {
-    
-    // 2. Додаємо новий обробник події 'click'
+
     listItem.addEventListener("click", (e) => {
-        
-        // 3. Логіка закриття всіх меню
+
         document.querySelectorAll(".menu").forEach(function(menuItem) {
             menuItem.style.display = "none";
         });
     });
+});
+
+document.getElementById("desktop-fore").addEventListener("contextmenu", (e)=>{
+e.preventDefault();
+
+document.querySelectorAll(".menu").forEach(function(item){
+item.style.display="none";
+})
+
+document.getElementById("deskM").querySelectorAll("li > p").forEach(function(item) {item.innerText = _(item.innerText);})
+document.getElementById("deskM").style.display = "block";
+document.getElementById("deskM").style.left = e.clientX+"px";
+document.getElementById("deskM").style.top = e.clientY+"px";
 });
 
 document.getElementById("desktopApps").addEventListener("contextmenu", (e)=>{
@@ -6199,15 +6316,17 @@ document.getElementById("deskM").style.top = e.clientY+"px";
 });
 
 
+
+
+
 function drawEditContextMenu(e, l = 0, t = 0, doc = document) {
     const editableTarget = e.target.closest('[contenteditable="true"]') || 
                            (['TEXTAREA', 'INPUT'].includes(e.target.tagName) ? e.target : null);
-    
-    // Перевірка на user-select: none
+
     const selectableTarget = window.getComputedStyle(e.target).userSelect !== 'none' ? e.target : null;
 
-    if (l == 0) l = e.clientX;
-    if (t == 0) t = e.clientY;
+    if (l == 0) l = e.screenX;
+    if (t == 0) t = e.screenY;
 
     if (editableTarget || selectableTarget) {
         e.preventDefault();
@@ -6218,7 +6337,6 @@ function drawEditContextMenu(e, l = 0, t = 0, doc = document) {
         menu.style.left = l + "px";
         menu.style.top = t + "px";
 
-        // Визначаємо набір команд правильно (пріоритет редагуванню)
         let commands = {};
         if (editableTarget) {
             commands = {
@@ -6236,7 +6354,7 @@ function drawEditContextMenu(e, l = 0, t = 0, doc = document) {
 
         menu.querySelectorAll('li').forEach(li => {
             const command = commands[li.id];
-            // Скидаємо попередні налаштування (важливо для повторного використання меню)
+
             li.style.display = command ? "block" : "none"; 
             li.onmousedown = null;
             li.onclick = null;
@@ -6244,24 +6362,61 @@ function drawEditContextMenu(e, l = 0, t = 0, doc = document) {
             if (command) {
                 li.onmousedown = (event) => event.preventDefault(); 
 
-                li.onclick = (event) => {
-                    event.stopPropagation();
-                    
-                    // БЕЗПЕЧНИЙ ФОКУС
-                    if (editableTarget && typeof editableTarget.focus === 'function') {
-                        editableTarget.focus();
-                    }
-                    
-                    try {
-                        // Для терміналів іноді краще використовувати Clipboard API, 
-                        // але execCommand має працювати, якщо є виділення.
-                        doc.execCommand(command, false, null);
-                    } catch (err) {
-                        console.warn("ExecCommand error:", err);
-                    }
+li.onclick = async (event) => {
+    event.stopPropagation();
 
-                    menu.style.display = 'none';
-                };
+    if (editableTarget && typeof editableTarget.focus === 'function') {
+        editableTarget.focus();
+    }
+    
+    try {
+        if (command === 'paste') {
+            // Використовуємо сучасний асинхронний Clipboard API
+            const text = await navigator.clipboard.readText();
+            
+            // Перевіряємо, чи це INPUT/TEXTAREA, чи contenteditable
+            if (editableTarget.tagName === 'INPUT' || editableTarget.tagName === 'TEXTAREA') {
+                const start = editableTarget.selectionStart;
+                const end = editableTarget.selectionEnd;
+                const val = editableTarget.value;
+                
+                // Вставляємо текст у позицію курсора (замінюючи виділений текст, якщо він є)
+                editableTarget.value = val.substring(0, start) + text + val.substring(end);
+                
+                // Повертаємо курсор на місце після вставленого тексту
+                editableTarget.selectionStart = editableTarget.selectionEnd = start + text.length;
+            } else {
+                // Для contenteditable використовуємо стандартний фолбек або Range API
+                // Але execCommand('insertText') зазвичай працює безпечно, на відміну від 'paste'
+                doc.execCommand('insertText', false, text);
+            }
+        } else if (command === 'copy' || command === 'cut') {
+            // Для копіювання/вирізання теж можна зробити надійний міграційний шлях
+            let selectedText = "";
+            if (editableTarget && (editableTarget.tagName === 'INPUT' || editableTarget.tagName === 'TEXTAREA')) {
+                selectedText = editableTarget.value.substring(editableTarget.selectionStart, editableTarget.selectionEnd);
+            } else {
+                selectedText = doc.getSelection().toString();
+            }
+
+            if (selectedText) {
+                await navigator.clipboard.writeText(selectedText);
+                if (command === 'cut') {
+                    doc.execCommand('delete', false, null); // Видаляємо вирізане
+                }
+            }
+        } else {
+            // Усі інші команди (undo, redo, selectAll) залишаємо через execCommand
+            doc.execCommand(command, false, null);
+        }
+    } catch (err) {
+        console.warn("Clipboard/ExecCommand operation failed:", err);
+        // Резервний фолбек, якщо Clipboard API заблоковано політикою безпеки iframe
+        try { doc.execCommand(command, false, null); } catch(e){}
+    }
+
+    menu.style.display = 'none';
+};
             }
         });
     }
@@ -6271,18 +6426,11 @@ function drawEditContextMenu(e, l = 0, t = 0, doc = document) {
 document.body.addEventListener('contextmenu', (e) => {
 drawEditContextMenu(e);
     });
-    
-function stackCascade() {
-  const windows = document.querySelectorAll('.winbox');
-  const offset = 30; // Зсув кожного наступного вікна
-// TODO: Stacks of WinBox`es
-}
 
-// Запускаємо оновлення кожну секунду
 
 setInterval(updateTime, 500);
 window.addEventListener('message', function(event) {
-    // 1. Фільтруємо джерело (забезпечення безпеки)
+
     if (event.data && event.data.source === 'IR_Scanner') {
         const command = event.data.command;
         const key = event.data.key;
@@ -6290,22 +6438,20 @@ window.addEventListener('message', function(event) {
         
         
         if (command === 'KeyPress') {
-            // Тут ви можете виконати ЛОГІКУ ОС, пов'язану з ключем
-            // Наприклад, запуск програми, якщо ключ - це F1
+
+
             if (key === 'F1') {
-                // ... виконати функцію запуску програми 1
+
                  
             } else if (key === 'Enter') {
-                // ... виконати дію Enter
+
                  console.log("OS: Виконано дію Enter (OK)");
             }
-            // ... інша логіка обробки
+
         }
     }
 });
 
-
-// Виклик після user gesture або при ініціалізації
 
 async function updateBattery() {
     try {
@@ -6313,14 +6459,14 @@ async function updateBattery() {
         const batContainer = document.getElementById("batt");
         
         const updateInfo = () => {
-            // Переводимо рівень у відсотки
+
             const level = Math.round(battery.level * 100);
             
             if (batContainer) {
 if (level <= 20){
 batContainer.innerText = "🪫";
 if (!battery.charging){
-new Notification(_("low_batt_title"), {body:_("low_batt_body")})
+new Notification(_("low_batt"), {body:_("low_batt_body")})
 }
 }else{
 batContainer.innerText = "🔋";
@@ -6330,10 +6476,8 @@ batContainer.innerText = "🔋";
             }
         };
 
-        // Оновлюємо відразу
         updateInfo();
 
-        // Додаємо слухачі подій, щоб не використовувати setInterval
         battery.addEventListener('levelchange', updateInfo);
         battery.addEventListener('chargingchange', updateInfo);
     } catch (e) {
@@ -6354,27 +6498,39 @@ setInterval(async () => {
 }, 500);
 
 document.body.addEventListener('keydown', async function(event) {
-let volDN = "AudioVolumeDown"
-let volUP = "AudioVolumeUp"
-    // Регулювання гучності для Mac-розкладки
-    if (currentKeyboardLayout == "mac") {
-    volDN = 'F11';
-    volUP = 'F10';
+    let volDN = "AudioVolumeDown";
+    let volUP = "AudioVolumeUp";
+
+    if (typeof currentKeyboardLayout !== 'undefined' && currentKeyboardLayout === "mac") {
+        volDN = 'F11';
+        volUP = 'F10';
     }
+
+    if (event.key === volUP || event.key === volDN) {
+        event.preventDefault();
         let volPercent = Math.round(getMasterVolume() * 100); 
 
-if (event.key === volUP) {
-  event.preventDefault()
-    volPercent = Math.min(volPercent + 5, 100); // 90 + 5 = 95 (точно!)
-} else if (event.key === volDN) {
-  event.preventDefault()
-    volPercent = Math.max(volPercent - 5, 0);
-}
+        if (event.key === volUP) {
+            volPercent = Math.min(volPercent + 5, 100);
+        } else if (event.key === volDN) {
+            volPercent = Math.max(volPercent - 5, 0);
+        }
 
-vol = volPercent / 100; // Перетворюємо в 0.95 тільки для аудіо-контексту
-    
+        const targetVol = volPercent / 100;
+        if (typeof setMasterVolume === 'function') {
+            setMasterVolume(targetVol); 
+        } else {
+            vol = targetVol; // fallback, якщо це глобальна змінна
+        }
+    }
 
-    // Закриття активного вікна Infinity OS через Alt + F4
+    /*
+    if (event.key === 'Meta') {
+        event.preventDefault();
+        openMenu();
+    }
+    */
+
     if (event.altKey && event.key === 'F4') {
         event.preventDefault();
         const activeWindow = document.querySelector('.winbox.focus');
@@ -6383,12 +6539,12 @@ vol = volPercent / 100; // Перетворюємо в 0.95 тільки для 
         }
     }
 
-    // Блокування шкідливих для браузерної ОС дефолтних комбінацій (Схоронність, Друк тощо)
     if (event.ctrlKey || event.metaKey) {
         const key = event.key.toLowerCase();
-        const isAllowed = ['s', 'p', 'f'].includes(key);
 
-        if (isAllowed) {
+        const blacklisted = ['s', 'p', 'f']; 
+
+        if (blacklisted.includes(key)) {
             event.preventDefault();
             event.stopPropagation();
         }
@@ -6397,8 +6553,7 @@ vol = volPercent / 100; // Перетворюємо в 0.95 тільки для 
 
 
 
-//indexedDB.deleteDatabase(DB_NAME);
-//localStorage.clear();
-
-
-
+/*
+indexedDB.deleteDatabase(DB_NAME);
+localStorage.clear();
+*/

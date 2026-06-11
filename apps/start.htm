@@ -19,7 +19,7 @@
             --panel-bg: #f8f9fa;
         }
 
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 5px; display: flex; flex-direction: column; align-items: center; }
+        body { background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 5px; display: flex; flex-direction: column; align-items: center; }
         .search-container {
     width: 100%;       /* Займає доступний простір */
     max-width: 500px;  /* Але не стає ширшим за 500px */
@@ -238,7 +238,10 @@ const SITE_LIST = localStorage.getItem("SITE_LIST")? JSON.parse(localStorage.get
     'https://www.naughtyamerica.com/',
     'https://commons.wikimedia.org/wiki/search',
     'http://www.ipernity.com/',
-    "https://dev.to/"
+    "https://dev.to/",
+    "https://ctan.org",
+    "https://debconf-video-team.pages.debian.net/videoplayer",
+    "https://onehtmlpagechallenge.com/"
 
 ];
 
@@ -573,11 +576,13 @@ try {
     }
 
     function buildTrends() {
-        const words = {};
-        searchIndex.forEach(p => (p.content.toLowerCase().match(/[a-zа-яіїє]{5,}/gi) || []).forEach(w => words[w] = (words[w] || 0) + 1));
-        const top = Object.entries(words).sort((a,b) => b[1]-a[1])
-        trends.innerHTML = top.map(([w]) => `<button class="trend-tag" onclick="searchInput.value='${w}';performSearch()">${w}</button>`).slice(-10).join('');
-    }
+    const words = {};
+    searchIndex.forEach(p => (p.content.toLowerCase().match(/[a-zа-яіїє]{5,}/gi) || []).forEach(w => words[w] = (words[w] || 0) + 1));
+    const top = Object.entries(words).sort((a,b) => b[1]-a[1]);
+    
+    // БЕРЕМО ПЕРШІ 10 (ТОП ПОПУЛЯРНИХ), А НЕ ОСТАННІ
+    trends.innerHTML = top.slice(0, 10).map(([w]) => `<button class="trend-tag" onclick="searchInput.value='${w}';performSearch()">${w}</button>`).join('');
+}
 
     searchBtn.onclick = async () => { if(!searchIndex.length) await startIndexing(); performSearch();  };
     searchInput.onkeypress = async (e) => { if(e.key==='Enter') { if(!searchIndex.length) await startIndexing(); performSearch(); }};

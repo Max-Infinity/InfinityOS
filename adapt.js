@@ -1,3 +1,9 @@
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 async function redefineAdaptations() {
   // Краще використовувати window.onerror для повного перехоплення системних помилок
 window.onerror = (message, source, lineno, colno, error) => {
@@ -95,6 +101,8 @@ const pri = new wm( _("print_btn"), {x: "center",y: "center",class: wbtheme+" no
 } } )
 };
 
+
+
   // alert
   window.alert = (msg) => {
   return new Promise((resolve) => {
@@ -110,7 +118,7 @@ const pri = new wm( _("print_btn"), {x: "center",y: "center",class: wbtheme+" no
       html: `
         <div style="text-align:left; padding:10px;">
 <img width="70" src="${icns.dialogInfo}">
-          ${msg}<br>
+          ${escapeHtml(msg)}<br>
           <button id="okBtn">OK</button>
         </div>
       `,
@@ -135,7 +143,7 @@ window.confirm = async (msg) => {
             <img width="50" src="${icns.dialogQues}">
           </div>
           <div style="flex-grow: 1; font-size: 14px; color: black; line-height: 1.4;">
-            ${msg}
+            ${escapeHtml(msg)}
           </div>
         </div>
         <div style="text-align: right; padding: 0 15px 15px;">
@@ -167,7 +175,7 @@ window.prompt = async (msg, defaultValue = "") => {
             <img width="50" src="${icns.dialogQues}">
           </div>
           <div style="flex-grow: 1;">
-            <div style="font-size: 14px; margin-bottom: 10px;">${msg}</div>
+            <div style="font-size: 14px; margin-bottom: 10px;">${escapeHtml(msg)}</div>
             <input id="inputPrompt" value="${defaultValue}" 
                    style="width: 100%; box-sizing: border-box; padding: 5px;">
             
@@ -196,65 +204,69 @@ window.prompt = async (msg, defaultValue = "") => {
 }
 
 function redefineNotifications() {
-  const NotificationWrapper = `
+  // Використовуємо String.raw, щоб захистити всі зворотні слеші та спецсимволи (як \n) від викривлення
+  const NotificationWrapper = String.raw`
 class OSNotification {
   constructor(title, options = {}) {
     this.title = title;
     this.options = options;
     
+    const box = document.createElement("div");
+    box.className = "notification";
 
-  const box = document.createElement("div");
+    const titleEl = document.createElement("strong");
+    titleEl.textContent = title;
 
-  box.className = "notification";
+    const bodyEl = document.createElement("div");
+    bodyEl.textContent = options.body || "";
 
-  const titleEl = document.createElement("strong");
-titleEl.textContent = title;
+    if (options.icon) {
+      const ic = document.createElement("img");
+      ic.style.width = "32px";
+      ic.style.marginRight = "10px"; 
+      ic.src = options.icon;
+      box.appendChild(ic);
+    }
+    
+    box.appendChild(titleEl);
+    box.appendChild(bodyEl);
 
-const bodyEl = document.createElement("div");
-bodyEl.textContent = options.body || "";
-if (options.icon){
-const ic = document.createElement("img");
-ic.style.width = "32px";
-ic.style.marginRight = "10px"; 
+    let doc;
+    try {
+      doc = parent?.document || document;
+    } catch {
+      doc = document;
+    }
+    doc.body.appendChild(box);
+    
+    if (options.onshow) {
+      options.onshow();
+    }
 
-ic.src = options.icon;
+    box.addEventListener("click", () => {
+      this.close(); 
+      if (options.onclick) options.onclick();
+    });
 
-box.appendChild(ic);
-}
-box.appendChild(titleEl);
-box.appendChild(bodyEl);
-let doc;
-try {
-  doc = parent?.document || document;
-} catch {
-  doc = document;
-}
-  doc.body.appendChild(box);
-  
-  
-  if (options.onshow){
-    options.onshow();
-  }
-box.addEventListener("click", () =>{this.close(); if (options.onclick) options.onclick()});
+    if (!options.silent) {
+      if (window.sounds) {
+        window.sounds.play(options.sound || "notify");
+      } else if (parent?.window?.sounds) {
+        parent.window.sounds.play(options.sound || "notify");
+      }
+    }
 
-  if (!options.silent) {
-    if (window.sounds) {
-  window.sounds.play(options.sound || "notify");
-}else if (parent?.window?.sounds){
-  parent.window.sounds.play(options.sound || "notify");
-}
-  }
-let closed = false;
+    let closed = false;
+    this.close = () => {
+      if (closed) return;
+      closed = true;
+      box.remove();
+      if (options.onclose) options.onclose();
+    };
 
-this.close = () => {
-  if (closed) return;
-     closed = true;
-  box.remove();
-  if (options.onclose) options.onclose();
-};
-  setTimeout(()=>{
-    this.close();
-  }, 2500);
+    setTimeout(() => {
+      this.close();
+    }, 2500);
   }
 
   static requestPermission() {
@@ -269,14 +281,18 @@ this.close = () => {
 window.Notification = OSNotification;
 `;
   
-  const sc = document.createElement("script");
+  // Перевіряємо, чи такий скрипт вже інжектили, щоб не засмічувати DOM
+  let sc = document.getElementById("infinity-notifications-core");
+  if (!sc) {
+    sc = document.createElement("script");
+    sc.id = "infinity-notifications-core";
+    document.head.appendChild(sc);
+  }
+  
   sc.innerText = NotificationWrapper;
-  document.head.appendChild(sc);
   
   return NotificationWrapper;
 }
-
-
 function redefineUSB() {
   const usbWrapper = `
 class usbWrapper(){

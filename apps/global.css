@@ -17,38 +17,6 @@
 }
 
 
-/* Базові налаштування для обох елементів */
-/* Remove default styling to allow custom animations */
-progress {
-  appearance: none;
-  width: 100%;
-  height: 20px;
-}
-
-/* Chrome, Safari, and Edge */
-progress::-webkit-progress-value {
-  background-color: #4caf50;
-  transition: width 0.5s ease; /* Smoothly animates the bar when 'value' changes */
-}
-
-/* Firefox */
-progress::-moz-progress-bar {
-  background-color: #4caf50;
-  transition: width 0.5s ease;
-}
-
-
-/* Target all possible value states for the fill animation */
-meter::-webkit-meter-optimum-value,
-meter::-webkit-meter-suboptimum-value,
-meter::-webkit-meter-even-less-good-value {
-  transition: width 1s ease;
-}
-
-/* For Firefox, target the bar specifically */
-meter::-moz-meter-bar {
-  transition: width 1s ease;
-}
 
 
 /* --- ОСНОВА --- */
@@ -94,6 +62,14 @@ div[contenteditable="true"] table {
     /* Обов'язково, щоб текст всередині комірок переносився */
 }
 
+div[contenteditable="true"] img {
+    table-layout: fixed;
+    width: 100% !important; /* Саме width, а не тільки max-width */
+    max-width: 100% !important;
+    word-break: break-word;
+    /* Обов'язково, щоб текст всередині комірок переносився */
+}
+
 table, tr, td, th{
     border: 1px solid #000;
 }
@@ -112,7 +88,7 @@ table, tr, td, th{
 
 ul:not(.menu)[style*="list-style-type: none"]> li{
 display:flex;
-align-items:center;cursor:pointer;margin-bottom:5px;padding:5px;border-bottom:1px dotted #eee;
+align-items:center;margin-bottom:5px;padding:5px;border-bottom:1px dotted #eee;
 line-height: 1.0;
 }
 ul:not(.menu)[style*="list-style-type: none"] div,
@@ -144,7 +120,6 @@ select {
     border: 1px solid var(--button-border);
     border-radius: 5px;
     padding: 5px 10px;
-    cursor: default;
     
 }
 
@@ -158,14 +133,70 @@ input[type="button"]:active {
 button:disabled, 
 input[type="button"]:disabled,
 select:disabled {
+    background: rgba(0, 0, 0, 0.25);
     color: var(--button-shadow);
-    cursor: not-allowed;
 }
+
+
+
+ul{
+    background-color: var(--bg-color);
+    border-radius: 0;
+    color: var(--color-text-primary) !important;
+}
+
+/* --- INPUT --- */
+
+input[type="text"], input[type="search"],input[type="url"] {
+    background-color: var(--input-bg);
+color: var(--button-text);
+border: 1px solid var(--input-border);
+border-radius: 5px;
+padding: 5px 10px;
+    width: 100%;
+    color: var(--color-text-primary);
+}
+progress {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    
+    display: block;
+    width: 100%;
+    height: 12px; /* Чітка фіксована висота замість паддінгу */
+    border-radius: 5px;
+    border: 1px solid var(--button-border); /* Такий самий бордер, як у кнопок */
+    background-color: var(--button-bg);   /* Такий самий фон треку, як у кнопок */
+    overflow: hidden;
+}
+
+/* --- ВІДНОВЛЮЄМО ЗАЛИВКУ ДЛЯ PROGRESS --- */
+
+/* Фон треку (Webkit) */
+progress::-webkit-progress-bar {
+    background-color: var(--button-bg);
+}
+
+/* Колір самої заливки (Chrome, Safari, Edge) */
+progress::-webkit-progress-value {
+    background-color: royalblue; /* Можна замінити на var(--accent-color), якщо є */
+    border-radius: 0; /* Оскільки трек уже overflow: hidden, тут заокруглення не потрібне */
+    transition: width 0.3s ease;
+}
+
+/* Колір самої заливки (Firefox) */
+progress::-moz-progress-bar {
+    background-color: #4caf50;
+    transition: width 0.3s ease;
+}
+
 
 /* Ефект 3D Bevel лише для класичної теми */
 .winbox.win_cla button,
 .winbox.win_cla input[type="button"],
 .winbox.win_cla select,
+.winbox.win_cla  progress,
+.winbox.win_cla meter,
 .winbox.win_cla .wb-control > *{
 outline: none; /* Windows Classic не використовував сучасний outline */
     border-radius: 0;
@@ -194,24 +225,3 @@ outline: none; /* Windows Classic не використовував сучасн
 .winbox.win_cla .wb-control > *:disabled{
     box-shadow: inset 1px 1px 0px var(--button-hilight);
 }
-
-ul{
-    background-color: var(--bg-color);
-    border-radius: 0;
-    color: var(--color-text-primary) !important;
-}
-
-/* --- INPUT --- */
-
-input[type="text"], input[type="search"],input[type="url"] {
-    background-color: var(--input-bg);
-color: var(--button-text);
-border: 1px solid var(--input-border);
-border-radius: 100px;
-padding: 4px 10px;
-cursor: default;
-    width: 100%;
-    
-    color: var(--color-text-primary);
-}
-
