@@ -262,7 +262,7 @@ function updateProcessList() {
     try {
         const winboxCollection = window.parent.document.getElementsByClassName("winbox");
         Array.from(winboxCollection).forEach(el => {
-            const title = el.querySelector('.wb-title')?.innerText || parent._("unknown");
+            const title = el.querySelector('.wb-title')?.innerText || el.winbox.title || parent._("unknown");
             const hidden = el.classList.contains("hide");
             addRow(el.id, title, 'winbox', hidden);
         });

@@ -5,12 +5,53 @@
 <meta charset="UTF-8">
 <body id="body" oncontextmenu=" event.preventDefault();">
   
+  <script>
+  if (typeof global === 'undefined') {
+    window.global = window;
+  }
+  /*
+console.log = (m,m1='') => document.getElementById('notify').innerText += '\n' + m+' '+m1;
+console.warn = (m,m1='') => document.getElementById('notify').innerText += '\n' + m+' '+m1;
+console.error = (m,m1='') => document.getElementById('notify').innerText += '\n' + m+' '+m1;
+*/
+
+
+// Catch asset loading failures (scripts, css, images)
+  window.addEventListener('error', function (event) {
+    if (event.target && event.target.tagName === 'SCRIPT') {
+      document.getElementById('notify').innerText = `Failed to load script: ${event.target.src}`;
+    }
+  }, true);
+
+  // --- DYNAMIC CORS / FILE PROTOCOL BYPASS ---
+  const isLocalFile = window.location.protocol === 'file:';
+  
+  function injectScript(src, useCors) {
+    const script = document.createElement('script');
+    script.src = src;
+    
+    // Only apply crossorigin if we aren't running locally on file:///
+    if (useCors && !isLocalFile) {
+      script.crossOrigin = 'anonymous';
+    }
+    
+    document.body.appendChild(script);
+  }
+
+  // We queue these to fire after the DOM is ready so they match the original behavior
+  window.addEventListener('DOMContentLoaded', () => {
+    // script.js and adapt.js need CORS in production, but not locally
+    injectScript('script.js', true);
+    injectScript('adapt.js', true);
+  });
+</script>
+
 <script src="dist/winbox.bundle.min.js"></script>
 <script src="dist/jszip.min.js"></script>
 <script src="dist/marked.umd.js"></script>
 <script src="dist/turndown.min.js"></script>
 <script src="dist/mammoth.browser.min.js"></script>
-<script src="dist/html-docx.min.js"></script>
+<script src="dist/html-to-docx.browser.js"></script>
 
 <div id="desktop-fore">
   <p style="padding:0;margin:0;font-size: calc(100vw / 10)" class="clock-date"></p>
@@ -18,19 +59,11 @@
 </div>
 
 <div id="splash">
-<img style='width:min(10vw, 64px);' src="branding/logo.png">
-<style>
-html,body {
-  height: 100vh;
-  width: 100vw;
-  margin: 0;
-  padding: 0;
-}
-</style>
+<img style='width:min(10vw, 64px);' src="assets/logo.png">
 
 
 <progress max="100" value="0" min="0" id='loadprg'></progress>
-<p id="notify"></p>
+<p style="font-family:sans-serif;" id="notify"></p>
 </div>
   <div id="desktopApps"></div>
 
@@ -94,7 +127,7 @@ html,body {
 </div>
 
  <footer id="taskbar">
-   <img id="menubtn" src="branding/logo.png" onclick="openMenu(event)"></img>
+   <img id="menubtn" src="assets/logo.png" onclick="openMenu(event)"></img>
 
 
 <div id="taskbar-right" class="right">
@@ -104,8 +137,7 @@ html,body {
 </div>
  </footer>
  <script src="langs.js"></script>
-  <script src="script.js"></script>
-  <script src="adapt.js"></script>
+
 
 </body>
 

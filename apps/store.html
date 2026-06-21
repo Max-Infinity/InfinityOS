@@ -199,7 +199,7 @@ const translations = {
         list: "Список додатків",
         copyMeta: "Копіювати метапакет",
         install: "Встановити",
-        tester: "Тестувальник",
+
         minOS: "Мінімальна версія ОС",
         deps: "Залежності",
         searchPlaceholder: "Пошук додатків...",
@@ -231,7 +231,7 @@ const translations = {
         list: "List",
         copyMeta: "Copy meta",
         install: "Install",
-        tester: "Tester",
+
         minOS: "Minimal OS version",
         deps: "Dependencies",
         searchPlaceholder: "Search apps...",
@@ -263,7 +263,7 @@ const translations = {
         list: "Liste des applications",
         copyMeta: "Copier le méta",
         install: "Installer",
-        tester: "Testeur",
+
         minOS: "Version minimale de l'OS",
         deps: "Dépendances",
         searchPlaceholder: "Rechercher des applications...",
@@ -295,7 +295,7 @@ const translations = {
         list: "Список приложений",
         copyMeta: "Копировать метапакет",
         install: "Установить",
-        tester: "Тестировщик",
+
         minOS: "Минимальная версия ОС",
         deps: "Зависимости",
         searchPlaceholder: "Поиск приложений...",
@@ -327,7 +327,7 @@ const translations = {
         list: "Lista aplikacji",
         copyMeta: "Kopiuj meta",
         install: "Instaluj",
-        tester: "Tester",
+
         minOS: "Minimalna wersja OS",
         deps: "Zależności",
         searchPlaceholder: "Szukaj aplikacji...",
@@ -498,6 +498,73 @@ function isCompatible(app) {
     return formatVersion(currentOS) >= formatVersion(app.minOS);
 }
 
+function computeRating(app) {
+    const t = (app.tester || "").toLowerCase();
+    let score = 3.0;
+    allApps = apps; 
+
+    // --- Positive signals ---
+    if (t.includes("stable"))                               score += 1.5;
+    if (t.includes("runs on all devices") ||
+        t.includes("runs on most"))                         score += 0.5;
+    if (t.includes("low resource"))                         score += 0.5;
+    if (t.includes("low resource"))                         score += 0.5;
+    if (t.includes("applying successfully"))                score += 0.5;
+    if (t.includes("doesnt use storage"))                   score += 0.5;
+    if (t.includes("can be set as"))                        score += 1.0;
+
+    // --- Negative signals ---
+    if (t.includes("not playable"))                         score -= 2.0;
+    if (t.includes("unstable"))                             score -= 1.0;
+    if (t.includes("lags") || t.includes("lag"))            score -= 0.75;
+    if (t.includes("4gb ram"))                              score -= 1.5;
+    if (t.includes("2gb ram"))                              score -= 0.75;
+    if (t.includes("requires newer gpu") ||
+        t.includes("may require newer gpu"))                score -= 0.5;
+    if (t.includes("gpu recommended"))                      score -= 0.25;
+    if (t.includes("needs internet") ||
+        t.includes("requires high network"))                score -= 0.5;
+    if (t.includes("unsupported on mobile"))                score -= 0.5;
+    if (t.includes("sometimes") || t.includes("may lag"))   score -= 0.5;
+    if (t.includes("large files may lag"))                  score -= 0.25;
+
+     const allVersions = allApps.map(a => parseInt(formatVersion(a.minOS || "99999999"), 10));
+    const minVer = Math.min(...allVersions);
+    const maxVer = Math.max(...allVersions);
+    const appVer = parseInt(formatVersion(app.minOS || "99999999"), 10);
+    const userVer = parseInt(formatVersion(currentOS), 10);
+
+    // Bonus up to +0.5 based on where this app sits in the [min, max] spread
+    if (maxVer > minVer) {
+        const normalized = 1 - (appVer - minVer) / (maxVer - minVer); // 1 = oldest req, 0 = newest req
+        score += normalized * 0.5;
+    }
+
+    // Extra +0.25 if the app's required OS is older than the user's current OS
+    // (meaning it's comfortably within the user's compatibility range)
+    if (appVer <= userVer) score += 0.25;
+
+apps.find(a => a.name == app.name && a.desc == app.desc).rating = Math.min(5, Math.max(1, Math.round(score * 2) / 2));
+    return Math.min(5, Math.max(1, Math.round(score * 2) / 2));
+}
+
+function renderStars(rating, showNumber = 1) {
+    let html = '<span style="font-size:15px;letter-spacing:1px;line-height:1;">';
+    for (let i = 1; i <= 5; i++) {
+        const color = rating >= i ? '#EF9F27'
+                    : rating >= i - 0.5 ? '#EF9F27'
+                    : 'var(--color-text-tertiary, #aaa)';
+        const opacity = rating >= i ? '1'
+                      : rating >= i - 0.5 ? '0.5'
+                      : '0.25';
+        html += `<span style="color:${color};opacity:${opacity};">★</span>`;
+    }
+    if (showNumber)
+        html += ` <small>${rating.toFixed(1)}</small>`;
+    html += '</span>';
+    return html;
+}
+
 /* Cards */
 function createCard(app) {
     const card = document.createElement("div");
@@ -505,7 +572,7 @@ function createCard(app) {
 
     card.innerHTML = `
         <p style="white-space: nowrap; font-weight: bold; font-size: 20px;">${app.name || ""}</p>
-        <small>${app.developer || ""}</small>
+        <small style=' display:flex;justify-content: space-between;'>${app.developer || ""} ${renderStars(computeRating(app),0)}</small>
         <br>
         <button class="inst">${currentStrings.install}</button>
     `;
@@ -558,10 +625,13 @@ function openDialog(app) {
         <h2 style="user-select: text;">${app.name || ""}</h2>
         <small>${app.developer || ""}</small>
         <p style="user-select: text;">${app.desc || ""}</p>
+        <p><b>${currentStrings.minOS}:</b> ${app.minOS || "00000000"}</p>
         <button class="inst">${currentStrings.install}</button>
         <hr>
-        <p><b>${currentStrings.tester}:</b> ${app.tester || ""}</p>
-        <p><b>${currentStrings.minOS}:</b> ${app.minOS || "00000000"}</p>
+
+        <p>${renderStars(computeRating(app))}</p>
+        <p>${app.tester || ""}</p>
+        
     `;
     
     if (app.deps != null){

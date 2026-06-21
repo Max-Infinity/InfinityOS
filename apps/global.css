@@ -156,6 +156,22 @@ padding: 5px 10px;
     width: 100%;
     color: var(--color-text-primary);
 }
+
+input[type="range"] {
+  /* Add transition to the background or transform properties */
+  transition: all 0.3s ease-in-out;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  /* Ensure the thumb itself transitions smoothly */
+  transition: transform 0.2s ease;
+}
+
+/* Subtle animation on hover/active states */
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+
 progress {
     appearance: none;
     -webkit-appearance: none;
@@ -195,33 +211,46 @@ progress::-moz-progress-bar {
 .winbox.win_cla button,
 .winbox.win_cla input[type="button"],
 .winbox.win_cla select,
-.winbox.win_cla  progress,
-.winbox.win_cla meter,
-.winbox.win_cla .wb-control > *{
-outline: none; /* Windows Classic не використовував сучасний outline */
+.winbox.win_cla .wb-control > *,
+
+body.win_cla button,
+body.win_cla input[type="button"],
+body.win_cla select,
+body.win_cla .wb-control > * {
+    outline: none; /* Windows Classic не використовував сучасний outline */
     border-radius: 0;
-    background-color: var(--button-bg) ;
-    color:black;
-    
-    box-shadow: 
-        inset 1px 1px 0px var(--button-hilight), 
+    background-color: var(--button-bg);
+    color: black;
+
+    box-shadow:
+        inset 1px 1px 0px var(--button-hilight),
         inset -1px -1px 0px var(--button-dk-shadow);
 }
 
-
+.winbox.win_cla input,
+body.win_cla input {
+    border-radius: 0;
+}
 
 .winbox.win_cla button:active,
 .winbox.win_cla input[type="button"]:active,
-.winbox.win_cla .wb-control > *:active{
-    
-    box-shadow: 
-        inset 1px 1px 0px var(--button-dk-shadow), 
+.winbox.win_cla .wb-control > *:active,
+
+body.win_cla button:active,
+body.win_cla input[type="button"]:active,
+body.win_cla .wb-control > *:active {
+    box-shadow:
+        inset 1px 1px 0px var(--button-dk-shadow),
         inset -1px -1px 0px var(--button-hilight);
 }
 
 /* Для disabled у класичній темі прибираємо нижню тінь, лишаємо тільки відблиск */
 .winbox.win_cla button:disabled,
 .winbox.win_cla input[type="button"]:disabled,
-.winbox.win_cla .wb-control > *:disabled{
+.winbox.win_cla .wb-control > *:disabled,
+
+body.win_cla button:disabled,
+body.win_cla input[type="button"]:disabled,
+body.win_cla .wb-control > *:disabled {
     box-shadow: inset 1px 1px 0px var(--button-hilight);
 }

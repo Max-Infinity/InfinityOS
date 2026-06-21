@@ -11,7 +11,8 @@ let apps = [];
 let icons = [];
 let hiddenApps = [];
 let allowTelemetry = JSON.parse(localStorage.getItem("allowTelemetry") )|| false;
-let bgClock = JSON.parse(localStorage.getItem('backgroundClock')) ?? true;
+let bgClock = JSON.parse(localStorage.getItem('backgroundClock')) ?? false;
+let hideWinContentOnTransform = JSON.parse(localStorage.getItem("hideWinContentOnTransform") )|| false;
 let styles;
 let wbtheme; // Class name
 const devices = [];
@@ -108,10 +109,10 @@ const themeColors = styles;
     return stylesText;
   };
 
-  try {
     try {
       const iframeDoc = iframeElement.contentDocument || iframeElement.contentWindow.document;
       if (iframeDoc) {
+        iframeDoc.body.classList = document.body.classList;
         let styleTag = iframeDoc.getElementById("infinity-os-injector");
         if (!styleTag) {
           styleTag = iframeDoc.createElement("style");
@@ -123,12 +124,13 @@ const themeColors = styles;
     } catch (e) {
       console.error("Не вдалося достукатися до iframe додатка через CORS або ізоляцію:", e);
     }
-  } catch {}
+
 
   iframeElement.addEventListener("load", () => {
     try {
       const iframeDoc = iframeElement.contentDocument || iframeElement.contentWindow.document;
       if (iframeDoc) {
+        iframeDoc.body.classList = document.body.classList;
         let styleTag = iframeDoc.getElementById("infinity-os-font-injector");
         if (!styleTag) {
           styleTag = iframeDoc.createElement("style");
@@ -160,15 +162,12 @@ function kill(id, type) {
     } 
     
     if (type == "worker") {
-
         const workerEntry = window.systemWorkers.find(w => w.id === id);
-        
         if (workerEntry && workerEntry.instance) {
-
             workerEntry.instance.terminate();
-            console.log(`[Infinity OS] Worker ${id} killed.`);
+            console.log(`Worker ${id} killed.`);
         } else {
-            console.error(`[Infinity OS] Worker with ID ${id} not found.`);
+            console.error(`Worker with ID ${id} not found.`);
         }
     }
 }
@@ -205,7 +204,7 @@ async function buildDevProps() {
     memory: navigator.deviceMemory ? navigator.deviceMemory + " GB" : "Unknown",
     os: {
       name: "Infinity OS",
-      version: "10062026" // Hot release!
+      version: "21062026" 
     },
     deviceIcon: navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches ? "assets/laptop.svg" : "assets/pc.svg"
   };
@@ -269,7 +268,6 @@ let maxLS;
 window.icns = {
 
     files: "icons/files.svg",
-    toolpointer: "icons/tool-pointer.svg",
     clock: "icons/clock.svg",
     calc: "icons/calc.svg",
     settings: "icons/settings.svg",
@@ -410,7 +408,7 @@ async function safeShutdown({ restart = false } = {}) {
 
         window.close();
 
-        document.body.innerHTML = "<div style='background:#000;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;'>It is now safe to close your browser.</div>";
+        
     }
 }
 
@@ -530,7 +528,8 @@ mapToInfinityVariables(data) {
         
         md = 10; 
     } else {
-
+hideWinContentOnTransform = true;
+localStorage.setItem("hideWinContentOnTransform", "true");
         winActive = `linear-gradient(90deg, ${activeTitle} 0%, ${gradActiveTitle} 100%)`;
         winInactive = `linear-gradient(90deg, ${inactiveTitle} 0%, ${gradInactiveTitle} 100%)`;
         md = 0; // Classic themes usually have sharp corners
@@ -559,7 +558,7 @@ const infoText = this.winColorToCSS(cpColors['InfoText']);
         '--color-selection': highlight,
 
         '--bg-color': windowBg,
-        '--bg-panel': colorization ? this.parseColorization(colorization) : windowBg,
+        '--bg-panel': colorization ? this.parseColorization(colorization) : buttonFace,
         '--bg-body': windowBg,
         '--bg-menu': colorization ? this.parseColorization(colorization) : windowBg,
 
@@ -607,7 +606,7 @@ getName(data) {
     const vs = data['[visualstyles]'];
 const thm = data["[Theme]"]
     if (thm && thm['DisplayName']) return thm['DisplayName'];
-    return "Unknown Theme";
+    return "unknown-theme";
 }
     applyTheme(variables) {
         const root = document.documentElement;
@@ -615,11 +614,12 @@ const thm = data["[Theme]"]
             root.style.setProperty(key, value);
         }
 
+
     }
 }
 
 
-const theme = localStorage.getItem("theme") || null // Link to file here
+let theme = localStorage.getItem("theme") || null // Link to file here
 
 
 function loadTheme() {
@@ -668,10 +668,54 @@ function applyThemeToUI(name) {
     
     document.getElementById("taskbar").className = safeName;
     document.getElementById("sysmenu").className = safeName;
+
+    document.body.classList.add(safeName)
     
     Array.from(document.getElementsByClassName("menu")).forEach(e => {
         e.className = "menu " + safeName;
     });
+
+            if (hideWinContentOnTransform){
+let activeBox = null;
+
+// 1. Listen for pointerdown on both drag handles AND resize edges
+window.addEventListener('pointerdown', (e) => {
+if (e.target.closest('.wb-control, .min')) return;
+
+    // Check if they clicked the header
+    const header = e.target.closest('.winbox .wb-header');
+    
+    // Check if they clicked any of the directional resize edges/corners
+    const resizeEdge = e.target.closest([
+        '.winbox .wb-n', '.winbox .wb-e', 
+        '.winbox .wb-s', '.winbox .wb-w',
+        '.winbox .wb-nw', '.winbox .wb-ne', 
+        '.winbox .wb-sw', '.winbox .wb-se'
+    ].join(','));
+
+    // If they clicked neither, pass through
+    if (!header && !resizeEdge) return;
+
+    // Find the parent window container from whichever element was hit
+    const targetElement = header || resizeEdge;
+    activeBox = targetElement.closest('.winbox');
+    if (!activeBox) return;
+
+    // Turn on the wireframe style instantly
+    activeBox.classList.add('is-cont-hidden');
+});
+
+
+
+// 3. Clean drop (Clears the states for both dragging and resizing)
+window.addEventListener('pointerup', () => {
+    if (activeBox) {
+        activeBox.classList.remove('is-cont-hidden');
+        activeBox = null;
+        
+    }
+});
+}
 }
 
 /**
@@ -732,7 +776,7 @@ if (config.size) document.documentElement.style.setProperty('--taskbar-height', 
 
 
 const FILE_TYPES = {
-
+// Group 1: fully openable and editable
     'txt':  { mime: 'text/plain', icon: icns.textPlain },
     'css':  { mime: 'text/css', icon: icns.textCss },
     'html': { mime: 'text/html', icon: icns.textHtml },
@@ -742,29 +786,46 @@ const FILE_TYPES = {
     'md':   { mime: 'text/markdown', icon: icns.textRich },
     'rtf':  { mime: 'application/rtf', icon: icns.textRich },
     'csv':  { mime: 'text/csv', icon: icns.textCsv },
+    'theme':{ mime: 'application/x-theme', icon: icns.ms_theme },
     'docx': { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', icon: icns.textRich },
-
+// Group 2: viewable, but not editable. Resolution is available in 'Get Info'
     'jpg':  { mime: 'image/jpeg', icon: icns.imageGeneric },
     'jpeg': { mime: 'image/jpeg', icon: icns.imageGeneric },
     'png':  { mime: 'image/png', icon: icns.imageGeneric },
     'gif':  { mime: 'image/gif', icon: icns.imageGeneric },
     'svg':  { mime: 'image/svg+xml', icon: icns.imageGeneric },
     'webp': { mime: 'image/webp', icon: icns.imageGeneric },
+    'avif': { mime: 'image/avif', icon: icns.imageGeneric },
+    'apng': { mime: 'image/apng', icon: icns.imageGeneric },
 
-    'mp3':  { mime: 'audio/mpeg', icon: icns.audioGeneric },
+// Group 3: viewable and listenable, but not editable
     'wav':  { mime: 'audio/wav', icon: icns.audioGeneric },
-    'ogg':  { mime: 'audio/ogg', icon: icns.audioGeneric },
+    'ogg':  { mime: 'audio/ogg', icon: icns.audioGeneric },    'mp3':  { mime: 'audio/mpeg', icon: icns.audioGeneric },
+    'm4a':  { mime: 'audio/mp4', icon: icns.audioGeneric },
+    'aac':  { mime: 'audio/aac', icon: icns.audioGeneric },
+    'flac': { mime: 'audio/flac', icon: icns.audioGeneric },
+    'opus': { mime: 'audio/ogg', icon: icns.audioGeneric },
+    'weba': { mime: 'audio/webm', icon: icns.audioGeneric },
     'mp4':  { mime: 'video/mp4', icon: icns.videoMp4 },
     'webm': { mime: 'video/webm', icon: icns.videoMp4 },
+// Group 4: viewable, but not on every device (see comments after each definition to get more info)
+    'pdf':  { mime: 'application/pdf', icon: icns.pdf }, // Can be unavailable to open on mobile, fully supported on desktop
+// Group 5: can be added, removed (in next versions rich text formats will be able to use fonts from user drive) or set as UI font
+'ttf':  { mime: 'font/ttf', icon: icns.font }, 
+'otf':  { mime: 'font/otf', icon: icns.font }, 
+'woff': { mime: 'font/woff', icon: icns.font },
+'woff2':{ mime: 'font/woff2', icon: icns.font },
+// Group 6: added for compatibility (see comments after each entry to get more info)
+    'zip':  { mime: 'application/zip', icon: icns.archive }, // Can be unpacked via context menu, but opening doesn't work
+    'iso':  { mime: 'application/x-iso9660-image', icon: icns.cdImage }, // Can't be opened, but supported for compatibility (was supported before). May be opened by 3rd party app.
+    'img':  { mime: 'application/octet-stream', icon: icns.cdImage },     // Can't be opened, but supported for compatibility (was supported before). May be opened by 3rd party app.
+    'obj':  { mime: 'model/obj', icon: icns.empty }, // Can't be opened, but supported for compatibility (was supported before). May be opened by 3rd party app.
+    
+    'torrent': { mime: 'application/x-bittorrent', icon: icns.archive }, // May be opened by 3rd party app.
 
-    'pdf':  { mime: 'application/pdf', icon: icns.pdf },
-    'ttf':  { mime: 'font/ttf', icon: icns.font },
-    'zip':  { mime: 'application/zip', icon: icns.archive },
-    'iso':  { mime: 'application/x-iso9660-image', icon: icns.cdImage },
-    'img':  { mime: 'application/octet-stream', icon: icns.cdImage },
-    'obj':  { mime: 'model/obj', icon: icns.empty },
-    'theme':{ mime: 'application/x-theme', icon: icns.ms_theme }
 };
+
+let FILE_ASSOC =  JSON.parse(localStorage.getItem('config/exts')) || {};
 
 
 let fonts;
@@ -824,9 +885,12 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("delete_item_btn").addEventListener("click", (e) => {
         e.stopPropagation();
         if (obj && obj.parentNode) {
+          if (!document.body.classList.contains('win_cla')){
             obj.style.transition = "all 0.2s ease-out";
-            obj.style.opacity = "0";
             obj.style.transform = "scale(0.8)";
+          }
+            obj.style.opacity = "0";
+
             setTimeout(() => {
                 obj.remove();
                 obj = null; // Очищаємо посилання
@@ -907,7 +971,7 @@ function addIcon(nameKey, iconUrl, onclickLogic, showApp = true) {
             const appData = {
                 name: nameKey,
                 icon: iconUrl,
-                url: appUrl,
+                path: appUrl,
                 w:    getVal("width"),
                 h:    getVal("height"),
                 miw: getVal("minwidth"),
@@ -920,19 +984,18 @@ function addIcon(nameKey, iconUrl, onclickLogic, showApp = true) {
             if (showApp) addApp(appData);
         }
     } else {
-        const appData = { name: nameKey, icon: iconUrl };
+        const appData = {name:nameKey, icon:iconUrl, onclick: onclickLogic, element: appContainer};
 
 
     // Видаляємо "function() {", "() => {" або "async () => {" з початку рядка, а також зайві пробіли й переноси
     const bodyStart = logicStr
         .replace(/^(async\s+)?(function\s*\w*\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>\s*\{?)/, '')
         .trim();
-
-    if (showApp && (bodyStart.startsWith("new wm(") || bodyStart.startsWith("if (document.querySelector("))) {
+    if (showApp && (bodyStart.startsWith("new wm(") || bodyStart.startsWith("if (document.querySelector(") || bodyStart.startsWith("const unique") )) {
         addApp(appData);
     }
     }
-    icons.push({name:nameKey, icon:iconUrl, onclick: onclickLogic})
+    icons.push({name:nameKey, icon:iconUrl, onclick: onclickLogic, element: appContainer})
 
     desktopApps.appendChild(appContainer);
 }
@@ -945,28 +1008,13 @@ async function openApp(targ) {
             const expectedName = typeof targ === "string" ? targ : _(targ.name);
 
             const physicalIcon = Array.from(icons).find(icon => 
-                icon.name === expectedName
+                icon.name == expectedName
             );
 
            
-
-            if (physicalIcon && physicalIcon.onclick) {
-                const logicStr = physicalIcon.onclick.toString();
-
-                const braceIndex = logicStr.indexOf('{');
-                const arrowIndex = logicStr.indexOf('=>');
-                const cutIndex = braceIndex !== -1 ? braceIndex + 1 : (arrowIndex !== -1 ? arrowIndex + 2 : 0);
-                
-                const bodyStart = logicStr.substring(cutIndex).trim();
-
-                if (bodyStart.startsWith("new wm(") || 
-                    bodyStart.startsWith("if (document.querySelector(") || 
-                    bodyStart.includes("onclickLogic(event)")) { 
-                    
-                    
+            if (physicalIcon && physicalIcon.onclick && apps.some(app => app.name === physicalIcon.name)) {
                     physicalIcon.onclick(); 
-                    return true; 
-                }
+                    return true;
             }
         }
     }
@@ -979,11 +1027,11 @@ async function openApp(targ) {
         return; 
     }
 
-    if (app.url.startsWith("apps/") && !folderExists("apps")) {
+    if (app.path.startsWith("apps/") && !folderExists("apps")) {
         new wm(_(app.name), {
             x: "center", y: "center",
             class: app.class.map(c => c === "wbtheme" ? wbtheme : c).join(" ") || wbtheme + " no-full",
-            url: app.url,
+            url: app.path,
             icon: app.icon,
             minwidth: app.miw, minheight: app.mih,
             width: app.w, height: app.h,
@@ -1002,7 +1050,7 @@ async function openApp(targ) {
                 console.log(beforeDB + " -> " + DB_NAME);
             }
 
-            await Openf(null, null, getMimeType(app.url), app.url, startupDisk);
+            await Openf(null, null, getMimeType(app.path), app.path, startupDisk, false);
         } finally {
             if (DB_NAME == startupDisk && beforeDB != startupDisk) {
                 console.log(beforeDB + " <- " + DB_NAME);
@@ -1018,8 +1066,16 @@ async function openApp(targ) {
 
 
 function addApp(app){
-    if (!apps.find(a => a.url === app.url)) {
-    apps.push(app);
+    // Check by path if it exists, otherwise check by name
+    const exists = apps.find(a => {
+        if (app.path && a.path) {
+            return a.path === app.path;
+        }
+        return a.name === app.name;
+    });
+
+    if (!exists) {
+        apps.push(app);
     }
 }
 
@@ -1062,8 +1118,11 @@ function openMenu(event) {
         title.innerText = _(app.name);
 
             btn.onclick = () => {
+              if(app.path){
             openApp(app)
-            }
+          }else{
+            openApp(app.name);
+          }}
 
         
         btn.appendChild(ico);
@@ -1311,10 +1370,15 @@ function dataURLtoBlob(dataurl) {
 }
 
 function getExt(file) {
-    if(!file) return;
-    const name = typeof file === 'object' ? file.name : file;
-    return name.includes('.') ? name.split('.').pop().toLowerCase() : "";
-};
+    if (!file) return "";
+
+    const name = typeof file === "object" ? file.name : file;
+    const lastDot = name.lastIndexOf(".");
+
+    return lastDot > 0
+        ? name.slice(lastDot + 1).toLowerCase()
+        : "";
+}
 
 /**
  * Асинхронно перетворює File/Blob на об'єкт, придатний для JSON-серіалізації.
@@ -1585,100 +1649,52 @@ if (savedLayout) {
 }
 const notify = document.getElementById('notify')
 
-function finishStartup(){
-
-const localApps = fs.filter(a =>
-    a.name.endsWith(".js") ||
-    a.name.endsWith(".html") ||
-    a.name.endsWith(".htm")
-);
-if (localApps.length != 0){
-localApps.forEach(app => {
-    const reader = new FileReader();
-    const fileType = app.type;
-
-    reader.addEventListener("load", () => {
-        const content = reader.result;
-
-        if (fileType === "text/html") {
-            const titleMatch = content.match(/<title>(.*?)<\/title>/i);
-
-            const iconMatch = content.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i);
-            
-                addApp(
-                {
-                name: titleMatch ? titleMatch[1] : app.name.split("/").pop(),
-                icon: iconMatch ? iconMatch[1] : "",
-                url: app.name,
-                hash: fs.find(f=> f.name == app.name).size
-                }
-                )
-            
-        }
-    });
-
-    reader.readAsText(app);
-});
-
-    }
+function finishStartup() {
+// Блок автозавантаження
     let autoload = [];
-
     try {
         const autoloadString = localStorage.getItem('infinity_os_autoload');
-
         if (autoloadString) {
             autoload = JSON.parse(autoloadString);
         }
     } catch (e) {
-        console.error("Помилка парсингу даних автозавантаження (infinity_os_autoload):", e);
-        autoload = [];
+        console.error("Помилка парсингу даних автозавантаження:", e);
     }
 
-    if (Array.isArray(autoload)) {
+
         autoload.forEach(itemName => {
-
-            if (typeof fs === 'undefined') {
-                console.error("Глобальний масив файлової системи 'fs' не знайдено.");
-                return;
-            }
-
             const autofile = fs.find(file => file.name === itemName);
             
             if (autofile) {
                 const reader = new FileReader();
-
-                try {
-
-                    const cont = reader.readAsText(autofile)
-                    reader.addEventListener("load", () =>{
-
-
-                    eval(reader.result);        
-                    })
-
-                    
-                } catch (e) {
-                    console.error(`Помилка виконання коду у файлі ${itemName}:`, e);
-                    
-                }
+                // Загортаємо асинхронний слухач у свій try-catch, щоб захистити ядро від кривого коду в автозавантаженні
+                reader.addEventListener("load", () => {
+                    try {
+                        (0, eval)(reader.result); // Безпечний глобальний eval
+                    } catch (err) {
+                        console.error(`Помилка рантайму у файлі автозавантаження ${itemName}:`, err);
+                    }
+                });
+                reader.readAsText(autofile);
             } else {
-                console.warn(`Файл автозавантаження '${itemName}' не знайдено в fs або він порожній.`);
+                console.warn(`Файл автозавантаження '${itemName}' не знайдено в fs.`);
             }
         });
-    }
-
     
-    setTimeout(() => {
 
-        document.getElementById('splash').classList.add("hidden"); 
+    // Приховуємо заставку та запускаємо звук
+    setTimeout(() => {
+        const splash = document.getElementById('splash');
+        if (splash) splash.classList.add("hidden"); 
     }, 500);
 
-    try{
-    sounds.play("startup")
-    }catch{
+    try {
+        sounds.play("startup");
+    } catch (e) {}
 
-    }
-    updateBattery()
+    
+        updateBattery();
+    
 }
 
 
@@ -1745,7 +1761,7 @@ window.oobe_next = () => {
     curr_oobe_step += 1;
 };
 
-        const oobe = new wm("Intro", {
+        const oobe = new wm("core.intro", {
             class: wbtheme + " no-header no-move no-resize",
             html: `<div class="toolbar"> <span id="oobe_step"></span> <button onclick='oobe_next()' disabled> > </button> </div><main style="justify-content:center; padding:15px;"id="oobe_cont"></main>`,
             x: "center",y: "center",
@@ -1788,7 +1804,7 @@ async function setupFonts() {
   const b = await f.arrayBuffer(); // Don't forget to await the buffer if it's a File/Blob
   const font = new FontFace(active, b);
 
-const blob = new Blob([b], { type: "font/ttf" }); // або woff/otf
+const blob = new Blob([b], { type: f.type }); // або woff/otf
 window.currentFontBlobUrl = URL.createObjectURL(blob);
 
 
@@ -1812,43 +1828,63 @@ window.currentFontBlobUrl = URL.createObjectURL(blob);
   }
 }
 
-function getMaxLS(pb, max = 5) {
+function setupExtentions() {
+// Список розширень з останньої групи, які за замовчуванням не мають внутрішнього обробника в ОС
+const restrictedExtensions = ['zip', 'iso', 'img', 'obj'];
 
-
-    const APPROX_MAX_LS = 5120; 
-
-    var data = "m";
-    
-    for (var i = 0; i < 40; i++) {
-        try { 
-            localStorage.setItem("DATA", data);
-            data = data + data;
-
-            let currentSize = Math.round(JSON.stringify(localStorage).length / 1024);
-            console.log(currentSize);
-
-            let progressRatio = Math.min(currentSize / APPROX_MAX_LS, 0.99); 
-
-
-            if (pb) pb.value = Math.round(progressRatio * max);
-
-        } catch(e) {
-
-            if (pb) pb.value = max;
-            
-            let finalSize = (JSON.stringify(localStorage).length).toFixed(2);
-            console.log("LIMIT REACHED: (" + i + ") " + finalSize);
-            console.log(e);
-
-            localStorage.removeItem("DATA");
-            
-            return finalSize;
+// Проходимо по всіх типах файлів у константі
+for (const ext in FILE_TYPES) {
+    if (FILE_TYPES.hasOwnProperty(ext)) {
+        if (restrictedExtensions.includes(ext)) {
+            // Для останньої групи явно ставимо null
+            FILE_TYPES[ext].openWith = null;
+        } else {
+            // Для всіх інших груп ініціалізуємо openf
+            FILE_TYPES[ext].openWith = FILE_ASSOC[ext] || "openf";
         }
     }
-    localStorage.removeItem("DATA");
+}     
 }
+  
+function getMaxLS(prg, max = 5) {
+    let i = 0;
+    const keyPrefix = "TEST_";
 
-const InfinityUsageTracker = (function() {
+    const chunkSize = 50 * 1024; // 50KB per write
+    let usedBytes = 0;
+
+    try {
+        while (true) {
+            const key = keyPrefix + i;
+            const value = "x".repeat(chunkSize);
+
+            localStorage.setItem(key, value);
+
+            usedBytes += chunkSize;
+            i++;
+
+            if (prg) {
+                const ratio = Math.min(usedBytes / (5 * 1024 * 1024), 0.99);
+                prg.value = Math.round(ratio * max);
+            }
+
+            console.log("Used KB:", (usedBytes / 1024).toFixed(1));
+        }
+    } catch (e) {
+        console.log("LIMIT REACHED:", usedBytes, "bytes");
+
+        // cleanup
+        for (let j = 0; j < i; j++) {
+            localStorage.removeItem(keyPrefix + j);
+        }
+
+        if (prg) prg.value = max;
+
+        return usedBytes;
+    }
+
+}
+const usageTracker = (function() {
 
     const getTodayKey = () => new Date().toISOString().split('T')[0];
 
@@ -1882,7 +1918,7 @@ const InfinityUsageTracker = (function() {
     };
 
     const save = () => {
-        if (allowTelemetry == true) localStorage.setItem('.usageData', JSON.stringify(stats));
+        if (allowTelemetry == true) localStorage.setItem('.usageData',JSON.stringify(stats));
     };
 
     return {
@@ -1901,6 +1937,65 @@ const InfinityUsageTracker = (function() {
         }
     };
 })();
+
+function registerApps(){
+  // Відфільтровуємо локальні програми
+    const localApps = fs.filter(a =>
+        a.name.endsWith(".js") ||
+        a.name.endsWith(".html") ||
+        a.name.endsWith(".htm")
+    );
+
+    if (localApps.length !== 0) {
+        localApps.forEach(app => {
+            const reader = new FileReader();
+            const fileType = app.type;
+
+            reader.addEventListener("load", () => {
+                const content = reader.result;
+
+                if (fileType === "text/html") {
+                    const titleMatch = content.match(/<title>(.*?)<\/title>/i);
+                    
+                    // ПРИБРАНО /g, щоб lastIndex не збивав перевірку для різних файлів
+                    const searchRegex = /(?:window\.|self\.|this\.|document\.)?location\.search/;
+                    let searchParam = "";
+
+                    if (searchRegex.test(content)) {
+                        const getParamRegex = /\.get\(\s*['"`]([^'"`]+)['"`]\s*\)/g;
+                        let match;
+                        const argumentsFound = [];
+
+                        while ((match = getParamRegex.exec(content)) !== null) {
+                            argumentsFound.push(match[1]);
+                        }
+
+                        if (argumentsFound.includes('file')) {
+                            searchParam = 'file';
+                        } else if (argumentsFound.includes('path')) {
+                            searchParam = 'path';
+                        } else if (argumentsFound.length > 0) {
+                            searchParam = argumentsFound[0];
+                        }
+                    }
+
+                    const iconMatch = content.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i);
+                    const systemFile = fs.find(f => f.name === app.name);
+
+                    addApp({
+                        name: titleMatch ? titleMatch[1] : app.name.split("/").pop(),
+                        icon: iconMatch ? iconMatch[1] : "",
+                        path: app.name,
+                        hash: systemFile ? systemFile.size : 0,
+                        openWithParam: searchParam
+                    });
+                }
+            });
+
+            reader.readAsText(app);
+        });
+    }
+}
 
 (async () => {
     try {
@@ -1938,15 +2033,21 @@ const InfinityUsageTracker = (function() {
         
         await npmUpdate();
         prg.value = 70;
+
+        await setupExtentions();
+        prg.value = 75;
         
         
         await redefineAdaptations()
         prg.value = 80;
+
+        await registerApps();
+        prg.value = 85;
         
         notificationAPI = await redefineNotifications()
         prg.value = 90;
 
-        if (allowTelemetry == true) await InfinityUsageTracker.start();
+        if (allowTelemetry == true) await usageTracker.start();
         prg.value = 95;
         
         await finishStartup();
@@ -2086,7 +2187,7 @@ function htmlToRtf(html) {
  * @param {string} [type=null] - Примусовий MIME-тип (наприклад, "text/plain").
  * @param {File} [file=null] - Об'єкт файлу, якщо 'source' є подією, але викликано з контекстного меню.
  */
-function Openf(source, refr, type, file = null, disk = "idb") {
+function Openf(source, refr, type, file = null, disk = "idb", allowOpenWith = true) {
 
     let fileWinBox;
     let fileType = "unknown";
@@ -2097,34 +2198,10 @@ function Openf(source, refr, type, file = null, disk = "idb") {
     const uniqueFileId = "content-" + Date.now();
 
     
-    if (source && (source instanceof Event || source.currentTarget)) {
-
-        const event = source;
-        listItem = event.currentTarget;
-        
-        if (!type) {
-
-            filestr = listItem.innerText.trim();
-            
-        } else {
-
-            
-            filestr = listItem.getAttribute("data-file");
-            
-        }
-        
-        exfile = fs.find(item => item.name === filestr);
-        
-        if (!exfile) {
-            console.error("Файл не знайдено (через Event):"+filestr);
-            return;
-        }
-        fileType = type || exfile.type; // Встановлюємо тип
-        
-    } else {
+    
 
         
-        const fileOrName = source || file; // Використовуємо 'source' або 'file'
+        const fileOrName = (typeof file === 'string' ? file.split("?")[0] : file); // Використовуємо 'source' або 'file'
         
         if (typeof fileOrName === 'string') {
 
@@ -2143,7 +2220,7 @@ function Openf(source, refr, type, file = null, disk = "idb") {
             return;
         }
         fileType = type || exfile.type;
-    }
+    
 
     if (!exfile) return;
 
@@ -2159,13 +2236,26 @@ function Openf(source, refr, type, file = null, disk = "idb") {
     }
 
 
+
+if (allowOpenWith) {
+const nm = (typeof file == 'object') ? file.name : file;
+if (getExt(exfile) !== '' && !nm.includes('?') && !nm.includes('=')) {
+const ext = exfile.name.split('.').pop();
+const fileTypeConfig = FILE_TYPES[ext];
+if (fileTypeConfig && fileTypeConfig.openWith !== 'openf' && fileTypeConfig.openWith !== null) {
+const app = apps.find(app => app.path === fileTypeConfig.openWith);
+if (!app) return;
+Openf(null, null, getMimeType(app.path), app.path + "?" + app.openWithParam + "=" + exfile.name);
+return; 
+}}}
+
 let w = 255;
 let h = 200;
 
 let typeclass = fileType.split("/")[0] || fileType;
     fileWinBox = new wm(filestr, {
         icon: ic,x: "center",y: "center", // Використовуємо визначену іконку
-        class: ["no-full", wbtheme, typeclass],
+        class: ["no-full", wbtheme, typeclass, "hidden"],
         minheight: 200, minwidth: 255, width: w, height: h, x: "center",y: "center",
         html: `<div style="padding: 10px; color: black; height: 100%; text-align: center;overflow: hidden;">${_('loading_text')}</div>`
     });
@@ -2182,52 +2272,67 @@ let typeclass = fileType.split("/")[0] || fileType;
     reader.onload = async function(e) {
         const content = e.target.result;
         let newContent = '';
-
+fileWinBox.removeClass("hidden")
         
         if (fileType == "application/x-theme") {
-isEditable = false;
+
 localStorage.setItem("theme", exfile.name);
 try{
         const parser = new ThemeParser();
         const thm = parser.parse(content); 
 parser.applyTheme(thm.styles)
+applyThemeToUI(thm.name)
 }catch{
 loadTheme()
 }
 fileWinBox.close();
-}else if (fileType == "font/ttf") {
+}            
+        
+if (fileType.startsWith("font/") || fileType === "application/x-font-ttf" || fileType === "application/font-woff") {
 
-const fontName = exfile.name;
-
-
-
-newContent = `
-<style>
-    @font-face {
-        font-family: '${uniqueFileId}';
-        src: url(${e.target.result});
+    const fontName = exfile.name;
+    
+    // 2. Map the fileType to the proper CSS format() string
+    let cssFormat = "";
+    if (fileType.includes("woff2")) {
+        cssFormat = 'format("woff2")';
+    } else if (fileType.includes("woff")) {
+        cssFormat = 'format("woff")';
+    } else if (fileType.includes("ttf") || fileType.includes("truetype")) {
+        cssFormat = 'format("truetype")';
+    } else if (fileType.includes("otf") || fileType.includes("opentype")) {
+        cssFormat = 'format("opentype")';
     }
-    .preview-container-${uniqueFileId} { 
-        font-family: '${uniqueFileId}', serif !important; 
-        padding: 15px;
-    }
-</style>
 
-<div class="toolbar">
-       <button onclick="updateFonts('add', '${fontName}')">${_('add')}</button>
-    <button onclick="updateFonts('delete', '${fontName}')">${_('delete_btn')}</button>
-</div>
+    newContent = `
+    <style>
+        @font-face {
+            font-family: '${uniqueFileId}';
+            /* Added the dynamic format hint here */
+            src: url(${e.target.result}) ${cssFormat};
+        }
+        .preview-container-${uniqueFileId} { 
+            font-family: '${uniqueFileId}', serif !important; 
+            padding: 15px;
+        }
+    </style>
 
-<div class="preview-container-${uniqueFileId}">
-    <h2>Lorem Ipsum</h2>
-    <p>"Neque porro quisquam est qui dolorem ipsum..."</p>
-    <small>"There is no one who loves pain itself..."</small>
-    <h2>1234567890</h2>
-    <pre>@ # $ _ & - + () / * " ' : ; ! ?</pre>
-</div>
-`;
-            
-        }else if (fileType === "text/csv") {
+    <div class="toolbar">
+        <button onclick="updateFonts('add', '${fontName}')">${_('add')}</button>
+        <button onclick="updateFonts('delete', '${fontName}')">${_('delete_btn')}</button>
+        <button onclick="updateFonts('set', '${fontName}')">${_('apply')}</button>
+    </div>
+
+    <div class="preview-container-${uniqueFileId}">
+        <h2>Lorem Ipsum</h2>
+        <p>"Neque porro quisquam est qui dolorem ipsum..."</p>
+        <small>"There is no one who loves pain itself..."</small>
+        <h2>1234567890</h2>
+        <pre>@ # $ _ & - + () / * " ' : ; ! ?</pre>
+    </div>
+    `;
+}
+else if (fileType === "text/csv") {
   isEditable = true;
 
   const rows = content.split("\n").map(row => row.split(","));
@@ -2289,13 +2394,12 @@ try{
     }
 
     newContent = `
-<div style="padding:0; margin:0; background: #e0e0e0; display: flex; flex-direction: column; height: 100%;">
-    <div class="toolbar">
+    <div class="toolbar" style="overflow-x: auto;">
         <button id="saveBtn-${uniqueFileId}">${_('save_btn')}</button>
         <button id="printBtn-${uniqueFileId}">${_('print_btn')}</button>
         <button id="findBtn-${uniqueFileId}">${_('find_btn')}</button>
         
-        <div style="width:1px; height:20px; background:#ccc; margin: 0 5px;"></div>
+        <vr></vr>
         
         <button onclick="document.execCommand('bold')"><b>B</b></button>
         <button onclick="document.execCommand('italic')"><i>I</i></button>
@@ -2305,7 +2409,7 @@ try{
         <button onclick="document.execCommand('insertUnorderedList')">UL</button>
         <button onclick="document.execCommand('insertOrderedList')">OL</button>
 
-        <div style="width:1px; height:20px; background:#ccc; margin: 0 5px;"></div>
+        <vr></vr>
 
         <button onclick="document.execCommand('justifyLeft')">L</button>
         <button onclick="document.execCommand('justifyCenter')">C</button>
@@ -2313,7 +2417,7 @@ try{
 
 
     </div>
-
+<div style="padding:0; margin:0; background: #e0e0e0; display: flex; flex-direction: column; height: 100%;">
     <div style="flex-grow: 1; overflow-y: auto; padding: 20px 0;">
         <div contenteditable="true" 
              oninput='input(this.innerText)' 
@@ -2354,7 +2458,7 @@ if (titleMatch )fileWinBox.setTitle( titleMatch[1].trim())
                 const iconMatch = content.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i);
     if (iconMatch) fileWinBox.setIcon(iconMatch[1])
 
-                isEditable = false; 
+                 
 const redefiner = `
 <script>
 ${notificationAPI}
@@ -2367,26 +2471,39 @@ window.addEventListener('contextmenu', (e) => {
     }
 })
 
-window.alert = (...a)=>parent.alert(...a);
-window.prompt = (...a)=>parent.prompt(...a);
-window.confirm = (...a)=> parent.confirm(...a);
-window.console = parent.console;
-window.Worker = parent.Worker;
-window.print = () => parent.print()
+alert = (...a)=>parent.alert(...a);
+prompt = (...a)=>parent.prompt(...a);
+confirm = (...a)=> parent.confirm(...a);
+console = parent.console;
+Worker = parent.Worker;
+print = () => parent.print();
+window.showOpenFilePicker = (...o)=> window.parent.showOpenFilePicker(...o);
+window.showDirectoryPicker = (...o) => window.parent.showDirectoryPicker(...o)
+
 </script>
 `;
 
+const target = typeof file == 'string' ? '?'+file.split('?').pop() : exfile.name.split('/').pop();
+
+
+const safeTarget = target.replace(/'/g, "\\'");
+let modifiedContent = content;
+
+
+// 2. Заміна прямих звернень до рядка параметрів
+modifiedContent = modifiedContent.replaceAll('window.location.search', `'${safeTarget}'`);
+modifiedContent = modifiedContent.replaceAll('location.search', `'${safeTarget}'`);
 
 if (content.includes("new Notification(") ) {
     
     fileWinBox.onclose = (urgent) => {
         if (!urgent) {
 
-            console.log(`[Infinity OS] Background mode activated for ${fileWinBox.title}`);
+            console.log(`Background mode activated for ${fileWinBox.title}`);
             fileWinBox.hide();
             return true; // Перехоплюємо закриття
         } else {
-            console.log(`[Infinity OS] Force close! Terminating background processes.`);
+            console.log(`Force close! Terminating background processes.`);
             return false; // Дозволяємо системі знищити вікно
         }
     };
@@ -2394,20 +2511,18 @@ if (content.includes("new Notification(") ) {
 
 
 newContent = `
-    <div style="height: 100%; width: 100%;">
-        <iframe 
-            id="frame-${fileWinBox.id}"
-            srcdoc="${redefiner.replace(/"/g, '&quot;')}${content.replace(/"/g, '&quot;')}" 
-            style="width: 100%; height: 100%; border: none;"
-            onload="parent.applySystemConfig('${fileWinBox.id}')">
-        </iframe>
-    </div>
+      <div style="height: 100%; width: 100%;">
+          <iframe 
+              id="frame-${fileWinBox.id}"
+              srcdoc=" ${redefiner.replace(/"/g, '&quot;')} ${modifiedContent.replace(/"/g, '&quot;')}" 
+              style="width: 100%; height: 100%; border: none;"
+              onload="parent.applySystemConfig('${fileWinBox.id}')">
+          </iframe>
+      </div>
 `;
-
-
             } 
             else if (fileType == "text/javascript"){
-                isEditable = false;
+                
                 newContent = eval(content);
                 fileWinBox.close();
             } else {
@@ -2441,20 +2556,85 @@ newContent = `
                           </div>`;
                           
         } else if (fileType.startsWith("audio/")) {
+
+    // This updates the window setup rules
+          fileWinBox.width = 265;
+          fileWinBox.height = 180;
+          fileWinBox.resize();
+          fileWinBox.setTitle(fileWinBox.title.split('/').pop().split('.')[0]);
+    fileWinBox.addClass("no-resize")
+    fileWinBox.addClass("no-max")
+    fileWinBox.addClass("tra")
+
     const fileName = exfile.name.split("/").pop(); // Отримуємо назву файлу
     
     newContent = `
-<div style="display: flex; flex-direction: column; height: 100%; width: 100%; background: #222; overflow: hidden;">
+      <style>
+      .blinking{
+      animation: blinking 1s infinite step-end; 
+      }
+/* The animation code */
+@keyframes blinking {
+  0% {opacity: 0;}
+  50% {opacity: 1;}
+}
+
+
+.snd {
+  /* Remove default browser styling */
+  appearance: none;
+  -webkit-appearance: none;
+  
+  width: 90%;
+  height: 15px;
+  margin-left: 5px;
+  border-radius: 0px;
+}
+
+/* Container styling for Chrome/Safari/Edge */
+.snd::-webkit-meter-bar {
+
+  border: none;
+  border-radius: 0px;
+}
+
+/* The actual moving value bar for Chrome/Safari/Edge */
+.snd::-webkit-meter-optimum-value {
+  background-image: repeating-linear-gradient(
+    to right,
+    #4caf50,
+    #4caf50 6px,       /* Segment width (6px green) */
+    transparent 6px,   /* Gap starts exactly where green ends */
+    transparent 9px    /* Gap ends here (3px transparent space) */
+  );
+  background-size: auto 100%;
+  border-radius: 0px;
+}
+
+/* For Firefox container */
+.snd::-moz-meter-bar {
+
+  background-image: repeating-linear-gradient(
+    to right,
+    #4caf50,
+    #4caf50 6px,
+    transparent 6px,
+    transparent 9px
+  );
+}
+
+      </style>
+<div style="display: flex; flex-direction: column; height: 100%; width: 100%;  overflow: hidden;">
     
-    <div style="display: flex; height: 70px; border-bottom: 2px solid #333;">
+    <div style="display: flex; height: 70px;">
         
-        <div id="time-block-${uniqueFileId}" style="display: flex; flex-direction: column; width: 130px; border-right: 1px solid #444; background: #0a0a0a; color: #00ff00; font-family: monospace; font-weight: bold; display: flex; align-items: center; justify-content: center; position: relative;">
+        <div id="time-block-${uniqueFileId}" style="display: flex; flex-direction: column; width: 130px; border-right: 1px solid #444; background:rgba(0,0,0,0.5); color: #00ff00; font-family: monospace; font-weight: bold; display: flex; align-items: center; justify-content: center; position: relative;border-bottom-left-radius:10px;">
 
       <div style="display: flex; flex-direction: column; gap: 2px; width: 100%;">
-            <meter id="meter-l-${uniqueFileId}" min="0" max="100" value="0" style="flex-grow: 1;  display: block; accent-color: lime;"></meter>
-            <meter id="meter-r-${uniqueFileId}" min="0" max="100" value="0" style="flex-grow: 1; display: block; accent-color: lime;"></meter>
+            <meter id="meter-l-${uniqueFileId}" min="0" max="100" value="0" class='snd' style="flex-grow: 1;  display: block;"></meter>
+            <meter id="meter-r-${uniqueFileId}" min="0" max="100" value="0" class='snd' style="flex-grow: 1; display: block;"></meter>
 </div>
-<div style="display: flex; flex-direction: row;">
+<div style="display: flex; flex-direction: row; line-height:15px;">
             <sub id="play-status-${uniqueFileId}"  style="color:#aa0000;">\u25FC</sub>
             
             <b id="time-text-${uniqueFileId}" >0:00</b>
@@ -2463,23 +2643,23 @@ newContent = `
 
         </div>
 
-        <div style="flex-grow: 1;  background: black; overflow: hidden; display: flex; align-items: center;">
+        <div style="flex-grow: 1;  background:rgba(0,0,0,0.5); overflow: hidden; display: flex; align-items: center; border-bottom-right-radius:10px;">
       
             <marquee scrollamount="1" style="font-size: 18px; font-weight: bold; color: white; display: block;  width: 100%;font-family: monospace;">${fileName}</marquee>
         </div>
     </div>
 
-    <div style="padding: 10px; height: 35px; background: #333; border-bottom: 1px solid #444; display: flex; align-items: center;">
-        <input type="range" id="seek-${uniqueFileId}" style="flex-grow: 1; height: 10px; accent-color: lime; background: #222 !important; cursor: pointer;" min="0" max="100" value="0">
+    <div style="padding: 10px; display: flex; align-items: center;">
+        <input type="range" id="seek-${uniqueFileId}" style="flex-grow: 1; height: 10px;" min="0" max="100" value="0">
     </div>
 
-    <div style="padding: 5px; background: #222; display: flex; justify-content: space-evenly; align-items: center; font-family: 'Verdana';">
+    <div style="padding: 5px;display: flex; justify-content: space-evenly; align-items: center; color:black;">
         
-        <button id="ctrl-prev-${uniqueFileId}" title="Prev" >|⟨</button>
-        <button id="ctrl-pause-${uniqueFileId}" title="Pause" >PAUSE</button>
-        <button style="flex:1;" id="ctrl-play-${uniqueFileId}" title="Play">PLAY</button>
-        <button id="ctrl-stop-${uniqueFileId}" title="Stop" >STOP</button>
-        <button id="ctrl-next-${uniqueFileId}" title="Next" >⟩|</button>
+        <button id="ctrl-prev-${uniqueFileId}" title="Prev" ><</button>
+        <button id="ctrl-pause-${uniqueFileId}" style="color:yellow;">||</button>
+        <button id="ctrl-play-${uniqueFileId}"  style="flex:1; color:#0a0;" >\u25B6</button>
+        <button id="ctrl-stop-${uniqueFileId}"  style="color:#a00;" >\u25FC</button>
+        <button id="ctrl-next-${uniqueFileId}" title="Next" >></button>
     </div>
 
     <audio id="${uniqueFileId}" src="${content}" autoplay></audio>
@@ -2536,7 +2716,7 @@ const updateUI = () => {
                     playStatus.classList.remove("blinking");
                 }
             } else {
-                playStatus.style.color = '#00ff00'; // Playing (Green Triangle blinks, as requested)
+                playStatus.style.color = '#00aa00'; // Playing (Green Triangle blinks, as requested)
                 playStatus.innerText = '\u25B6';
                 playStatus.classList.add("blinking");
             }}
@@ -2545,15 +2725,21 @@ const updateUI = () => {
         const progress = ((audioPlayer.currentTime / audioPlayer.duration) * 100).toFixed(2);
         const gradient = `linear-gradient(to right, rgba(0, 128, 0, 0.5) 0%, rgba(0, 128, 0, 1.0) ${progress}%, transparent ${progress}%, transparent 100%)`;
         const combinedBackground = `${gradient}, var(--color-win-ina)`;
+        
         if (fileWinBox.min){
-        fileWinBox.setBackground(combinedBackground);}
-    };
+        fileWinBox.addClass("play")
+        fileWinBox.setBackground(combinedBackground);
+    }else{
+    
+    fileWinBox.removeClass("play");
+    }
+}
 
 
     setTimeout(() => {
         const player = document.getElementById(uniqueFileId);
         if (!player) return;
-
+player.play();
         player.ontimeupdate = updateUI;
 
         const meterL = document.getElementById(`meter-l-${uniqueFileId}`);
@@ -2573,9 +2759,11 @@ player._analyserL.fftSize = 32;
 player._analyserR.fftSize = 32;
 
 
-player._analyserL.minDecibels = -70; // Поріг повної тиші (чим ближче до 0, тим менше чутливість)
-player._analyserL.maxDecibels = -10; // Поріг максимального стрибка
-player._analyserR.minDecibels = -70;
+// A tighter decibel window means smaller acoustic changes span the entire 0-255 spectrum
+player._analyserL.minDecibels = -45; 
+player._analyserL.maxDecibels = -10;
+
+player._analyserR.minDecibels = -45;
 player._analyserR.maxDecibels = -10;
 
         player._source.connect(player._splitter);
@@ -2612,21 +2800,29 @@ player._analyserR.maxDecibels = -10;
         player._analyserL.getByteFrequencyData(dataArrayL);
         player._analyserR.getByteFrequencyData(dataArrayR);
 
-        const getVolumeFromFrequencies = (dataArray) => {
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i];
-            }
+const getVolumeFromFrequencies = (dataArray) => {
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+    }
+    
+    // 1. Get raw linear ratio (0.0 to 1.0)
+    const linearRatio = (sum / dataArray.length) / 255;
+    
+    // 2. Apply a fractional exponent (Power less than 1 boosts small numbers)
+    // 0.5 is a square root (high boost). Try 0.33 for an even crazier hyper-jump.
+    const hypersensitiveRatio = Math.pow(linearRatio, 0.4); 
+    
+    // 3. Scale back to 0-100%
+    return hypersensitiveRatio * 100;
+};
 
-            return (sum / dataArray.length) / 255 * 100;
-        };
+const volL = getVolumeFromFrequencies(dataArrayL);
+const volR = getVolumeFromFrequencies(dataArrayR);
 
-        const volL = getVolumeFromFrequencies(dataArrayL);
-        const volR = getVolumeFromFrequencies(dataArrayR);
-
-        const sensitivity = 0.5; 
-        mL.value = Math.min(volL * sensitivity, 100);
-        mR.value = Math.min(volR * sensitivity, 100);
+// No more flat multipliers needed; the math handles the sensitivity distribution!
+mL.value = volL;
+mR.value = volR;
     };
 
     player.onplay = () => {
@@ -2660,6 +2856,8 @@ player._analyserR.maxDecibels = -10;
         document.getElementById(`ctrl-next-${uniqueFileId}`).onclick = () => { player.currentTime += 10; updateUI(); };
 
     }, 50);
+    
+    
 updateUI()
 
     fileWinBox.onminimize = function() {
@@ -2709,7 +2907,7 @@ updateUI()
             const findButton = fileWinBox.body.querySelector(`#findBtn-${uniqueFileId}`);
             const saveButton = fileWinBox.body.querySelector(`#saveBtn-${uniqueFileId}`);
             const textArea = fileWinBox.body.querySelector(`#${uniqueFileId}`);
-            const tableCont = fileWinBox.body.querySelector(`#table-cont-${uniqueFileId}`);
+
 
 
 if (exfile.name.endsWith(".html") || exfile.name.endsWith(".htm")) printButton.disabled = true;
@@ -2733,6 +2931,31 @@ if (!isSave && !isPrint && !isFind) return;
 
 }
                 });
+                
+let isConfirmedClose = false; // Прапорець, який дозволить чисте знищення вікна
+
+fileWinBox.onclose = function(urgent) {
+    // Якщо закриття примусове (urgent) або ми вже пройшли перевірку збереження — закриваємо без питань
+    if (urgent || isConfirmedClose) {
+        return false; // Дозволяємо системі знищити вікно
+    }
+
+    // Якщо є незбережені зміни (або isEditable), перехоплюємо закриття
+    // Запускаємо асинхронний діалог у фоні
+    (async () => {
+        const save = await confirm(_("confirm_save_file").replace('{file}', exfile.name.split('/').pop() ));
+        if (save) {
+            saveButton.click(); // Твій фіксований збір CSV чи тексту
+        }
+        
+        // Змінюємо стан запобіжника і програмно викликаємо закриття знову!
+        isConfirmedClose = true;
+        fileWinBox.close(); 
+    })();
+
+    return true; // МИТТЄВО перехоплюємо перше натискання хрестика, щоб вікно не зникло завчасно
+};
+
 
 findButton.onclick = async () => {
     const query = await prompt(_("find_btn"));
@@ -2758,7 +2981,7 @@ findButton.onclick = async () => {
         }
     } else {
 
-        const container = tableCont || textArea;
+        const container = textArea;
         const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
         let textNode;
         let found = false;
@@ -2790,11 +3013,9 @@ findButton.onclick = async () => {
 printButton.onclick = async () => {
     const isTextarea = textArea.tagName.toLowerCase() === "textarea";
     let newTextContent;
-    if (!tableCont) {
+    
       newTextContent = isTextarea ? textArea.value : textArea.innerHTML;
-  }else{
-      newTextContent = tableCont.innerHTML;
-  }
+  
     
     const iframe0 = document.createElement('iframe');
 
@@ -2836,32 +3057,40 @@ newTextContent = textArea.value;
 if (fileType == "application/rtf"){
 newTextContent = htmlToRtf(textArea.innerHTML);
 }else if (fileType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"){
-
-
     const paddingPx = parseInt(window.getComputedStyle(textArea).paddingLeft) || 20;
     const marginTwips = Math.round((paddingPx / 96) * 1440);
 
-const cleanHtml = normalizeHTML(`  <!DOCTYPE html>
-  <html>
-    <head><meta charset="utf-8"></head>
-    <body>`+textArea.innerHTML+`    </body>
-  </html>`);
-console.log(cleanHtml)
+const cleanHtml = `<!DOCTYPE html>
+    <html lang="en">
+        <head>
+            <meta charset="UTF-8" />
+            <title>${exfile.name}</title>
+        </head>
+        <body>
+            ${textArea.innerHTML}
+        </body>
+    </html>`;
+    newTextContent = await window.HTMLToDOCX(cleanHtml, null, { orientation: 'portrait' });
 
-const blob = htmlDocx.asBlob(cleanHtml, {
-    orientation: 'portrait',
-    margins: { top: marginTwips, right: marginTwips, bottom: marginTwips, left: marginTwips }
-});
+} else if (fileType === "text/csv") {
+    // Цей код має виконуватися при натисканні на saveBtn
+const table = document.getElementById(`${uniqueFileId}`);
+const rows = Array.from(table.querySelectorAll('tr'));
 
-    newTextContent = blob;
+const csvContent = rows.map(tr => {
+    // Беремо всі клітинки поточного рядка
+    const cells = Array.from(tr.querySelectorAll('td'));
+    
+    // Чистимо текст кожної клітинки від внутрішніх переносів, які міг наставити contenteditable
+    return cells.map(td => {
+        return td.textContent.replace(/[\n\r]/g, '').trim();
+    }).join(",");
+}).join("\n");
 
-} else if (fileType === "text/csv" && tableCont) {
-    const rows = Array.from(tableCont.querySelectorAll('tr'));
-    newTextContent = rows.map(row => 
-        Array.from(row.querySelectorAll('td'))
-             .map(td => td.innerText.replace(/,/g, "")) // прибираємо коми в тексті
-             .join(",")
-    ).join("\n");
+// Тепер записуємо чистий CSV-текст назад у систему
+newTextContent = csvContent; 
+
+
 }else{
 var turndownService = new TurndownService()
 newTextContent = turndownService.turndown(textArea.innerHTML)
@@ -2869,7 +3098,7 @@ newTextContent = turndownService.turndown(textArea.innerHTML)
 }
 
                 const newFile = new File([newTextContent], exfile.name, { type: exfile.type ,lastModified: Date.now() });
-                
+
                 const index = fs.findIndex(item => item.name === exfile.name);
                 if (index !== -1) {
                     fs[index] = newFile;
@@ -2899,7 +3128,33 @@ newTextContent = turndownService.turndown(textArea.innerHTML)
 
 } 
 
+// Функція повертає true, якщо файл відповідає фільтрам, або якщо фільтрів немає
+function isFileAllowed(fileName, opts) {
+    // Якщо додаток не передав обмежень типу файлів, показуємо все
+    if (!opts || !opts.types || !Array.isArray(opts.types) || opts.types.length === 0) {
+        return true;
+    }
+    if (opts.runAs == 'dir') return false;
 
+    // Збираємо всі дозволені розширення в один плоский масив (наприклад: ['.png', '.jpg', '.jpeg'])
+    const allowedExtensions = [];
+    opts.types.forEach(typeObj => {
+        if (typeObj.accept && typeof typeObj.accept === 'object') {
+            Object.values(typeObj.accept).forEach(extArray => {
+                if (Array.isArray(extArray)) {
+                    allowedExtensions.push(...extArray);
+                }
+            });
+        }
+    });
+
+    // Якщо масив розширень порожній (про всяк випадок), дозволяємо показ
+    if (allowedExtensions.length === 0) return true;
+
+    // Перевіряємо, чи поточний файл закінчується на одне з дозволених розширень
+    const lowerName = fileName.toLowerCase();
+    return allowedExtensions.some(ext => lowerName.endsWith(ext.toLowerCase()));
+}
 
 /**
  * Асинхронно отримує інформацію про використання пам'яті (квоту)
@@ -2971,7 +3226,7 @@ async function zipFolder(folderPath, zipName = null, compress = false) {
                 const arrayBuffer = await f.arrayBuffer();
                 zip.file(relativePath, arrayBuffer);
             } catch (e) {
-                console.error(`[Infinity OS] Failed to read ${f.name}:`, e);
+                console.error(`Failed to read ${f.name}:`, e);
             }
         }
     }
@@ -2992,7 +3247,7 @@ async function zipFolder(folderPath, zipName = null, compress = false) {
 
     await saveFileToDB(resultFile);
 
-    console.log(`[Infinity OS] Archive created at: ${archivePath}`);
+    console.log(`Archive created at: ${archivePath}`);
     return archivePath; // Корисно для UI, щоб підсвітити файл
 }
 
@@ -3331,10 +3586,17 @@ async function getDisks() {
     return disks;
 };
 
-addIcon("files", icns.files, function(){ // ВИКОРИСТАННЯ КЛЮЧА
+addIcon("files", icns.files, function(e){
     const uniqueId = "file-explorer-" + Date.now(); 
-
-    new wm(_("files"), { // ВИКОРИСТАННЯ _()
+    console.warn(e);
+    const opts = (e && e.detail && e.detail.extraData) ? e.detail.extraData : {};
+    let mode = opts.runAs ? opts.runAs : 'view';
+    console.log("Active mode:", mode);
+    let title = _("files");
+    if (mode == 'file') title = _('select_file')
+    if (mode == 'dir') title = _('select_folder')
+    if (mode == 'save') title = _('save_to')
+    new wm(title, { // ВИКОРИСТАННЯ _()
     x: "center",y: "center",
         id: uniqueId, 
         icon: icns.files,
@@ -3422,6 +3684,9 @@ addIcon("files", icns.files, function(){ // ВИКОРИСТАННЯ КЛЮЧА
             };
 
             let currentDir = "";
+            if (mode != 'view' && opts.startIn){
+              currentDir = opts.startIn;
+            }
             
             const getFoldersInDir = (dir) => {
     const folders = new Set();
@@ -3601,7 +3866,11 @@ document.getElementById("print_btn").style.display = "none";
     file.name.endsWith(".zip") ? "block" : "none";
 
     document.getElementById("default_btn").style.display =
-    file.type.startsWith("font/") ? "block" : "none";
+    (file.type.startsWith("font/") || 
+     file.type === "application/x-font-ttf" || 
+     file.type === "application/font-woff" || 
+     file.type === "application/vnd.ms-opentype") ? "block" : "none";
+
 
   document.getElementById("zip_btn").style.display = "none";
 }
@@ -3833,9 +4102,18 @@ li.oncontextmenu = (e) => {
 };
 
         li.onclick = () => {
+          if (mode == 'view'){
             currentDir = currentDir ? currentDir + "/" + folderName : folderName;
              renderFileList();
              document.getElementById("pathlabel-"+uniqueId).value = currentDir;
+          }else if (mode == 'dir'){
+             window.dispatchEvent(new CustomEvent('dir_picked', {
+    detail: { 
+        paths: [folderName] // Передаємо як масив (навіть якщо файл один), бо W3C очікує масив
+    }
+}));
+             this.close()
+          }
         };
         
         
@@ -3921,8 +4199,20 @@ li.oncontextmenu = (e) => {
     }
 
     console.log(currentDisk.name)
+    if (mode == 'view'){
     Openf(null, updateQuotaInfo, getMimeType(file.name), file, currentDisk);
+  }else if (mode == 'file'){
+    window.dispatchEvent(new CustomEvent('file_picked', {
+    detail: { 
+        paths: [file.name] // Передаємо як масив (навіть якщо файл один), бо W3C очікує масив
+    }
+}));
+
+// Після відправки даних — закриваємо вікно провідника
+this.close()
+  }
 };
+
 
                 document.getElementById("pathlabel-"+uniqueId).onchange = (e) => {
                     currentDir = document.getElementById("pathlabel-"+uniqueId).value;
@@ -4310,7 +4600,9 @@ return 1;
             }
         }
 
-        if (file && file.type.startsWith("font/")){
+        const legacyFontTypes = ["application/x-font-ttf", "application/font-woff", "application/vnd.ms-opentype"];
+
+if (file && (file.type.startsWith("font/") || legacyFontTypes.includes(file.type))) {
           await updateFonts("delete", fileName)
         }
         
@@ -4387,8 +4679,8 @@ if (fileName.endsWith("/")){
             currentDir = fileName.slice(0,-1);
              renderFileList();
 }else{
-                        const file = fs.find(f => f.path === fileName);
-                        Openf(e, updateQuotaInfo, getMimeType(fileName), file);
+                        const file = fs.find(f => f.name === fileName);
+                        Openf(null, updateQuotaInfo, getMimeType(file.name), file, currentDisk);
 }
 
 
@@ -4398,15 +4690,20 @@ if (fileName.endsWith("/")){
         openTxtBtn.onclick = (e) => {
                         e.stopPropagation();
                         const fileName = e.target.closest("li").getAttribute("data-file");
-                        const file = fs.find(f => f.path === fileName);
-                        Openf(e, updateQuotaInfo, "text/plain", file);
+                        const file = fs.find(f => f.name === fileName);
+                        Openf(null, updateQuotaInfo, 'text/plain', file, currentDisk, false);
                     }
         
                     
                     li.appendChild(fileDisplay);
                     const isHidden = file.name.split("/").pop().startsWith(".");
 
-if (!isHidden || filesShowHidden) {
+// Вираховуємо, чи дозволений цей конкретний файл через пікер
+// Якщо ми в звичайному режимі 'view', то opts порожній, і isAllowed завжди буде true
+const isAllowedByPicker = (mode === 'file' || mode === 'save') ? isFileAllowed(file.name, opts) : true;
+
+// Твоя логіка відображення
+if ((!isHidden || filesShowHidden) && isAllowedByPicker) {
 
     fileListContainer.appendChild(li);
 
@@ -4500,12 +4797,17 @@ if (!isHidden || filesShowHidden) {
 
             await renderFileList();
             await updateQuotaInfo(); 
+        }, 
+        onclose: function(){
+            if (mode === 'file') window.dispatchEvent(new CustomEvent('file_cancel'));
+    if (mode === 'dir')  window.dispatchEvent(new CustomEvent('dir_cancel'));
+    if (mode === 'save') window.dispatchEvent(new CustomEvent('save_cancel'));
+    return false;
         }
     });
 });
 
-/* addIcon, Openf (повністю оновлена вище), Clock, Calculator, Internet, updateTime, setInterval(updateTime, 1000); 
-*/
+
 
 
 
@@ -4537,18 +4839,10 @@ addIcon(("about"),icns.dialogInfo, function(){
             
             
         `,
-          height: 365,
+        height: 365,
         width: 260,
         minheight: 320,
         minwidth: 250,
-    oncreate: () => {
-        const theme = localStorage.getItem("theme");
-if (theme == "dark"){
-    document.body.classList.add("dark");   // темна
-    }else{
-        document.body.classList.remove("dark"); // світла
-    }
-    },
   });
 });
 addIcon("Infinity Store",icns.store, function(){
@@ -4558,13 +4852,15 @@ addIcon("Infinity Store",icns.store, function(){
     url: "apps/store.html",
           height:300,width:400,minheight: 200,minwidth:400,oncreate: function() {
             applySystemConfig(this.id)
+          }, onclose: function(){
+            registerApps();
           }
     
   });
 });
 
 
-addIcon(("clock"), icns.clock, function(){
+addIcon("clock", icns.clock, function(){
     new wm(_('clock'), { 
         icon: icns.clock, x: "center",y: "center",
         class: ['no-full', 'no-max', wbtheme,'no-resize', 'tra'], 
@@ -4575,8 +4871,8 @@ addIcon(("clock"), icns.clock, function(){
 
 addIcon(("calculator"), icns.calc, function(){
 
-    const calcId = Math.floor(Math.random() * 1000000);
-    const instanceName = `InfinityCalc_${calcId}`;
+    const uniqueCalcId = Math.floor(Math.random() * 1000000);
+    const instanceName = `Calc_${uniqueCalcId}`;
 
     new wm(_('calculator'),{
         x: "center",
@@ -4616,7 +4912,7 @@ addIcon(("calculator"), icns.calc, function(){
             </style> 
 
             <div class="calc-container"> 
-                <input inputmode="decimal" type="text" id="calc-result-${calcId}" class="calc-display" readonly />
+                <input inputmode="decimal" type="text" id="calc-result-${uniqueCalcId}" class="calc-display" readonly />
                 
                 <input type="button" value="C" class="calc-btn" onclick="window.${instanceName}.clr()"/> 
                 <input type="button" value="π" class="calc-btn" onclick="window.${instanceName}.ent(Math.PI.toFixed(5))"/> 
@@ -4648,11 +4944,11 @@ addIcon(("calculator"), icns.calc, function(){
 
             window[instanceName] = {
                 dis: function(val) { 
-                    const res = document.getElementById(`calc-result-${calcId}`);
+                    const res = document.getElementById(`calc-result-${uniqueCalcId}`);
                     if(res) res.value += val;
                 }, 
                 solve: function() { 
-                    const res = document.getElementById(`calc-result-${calcId}`);
+                    const res = document.getElementById(`calc-result-${uniqueCalcId}`);
                     if(!res || res.value.trim() === "") return;
                     try { 
 
@@ -4663,11 +4959,11 @@ addIcon(("calculator"), icns.calc, function(){
                     } 
                 }, 
                 ent: function(i) {
-                    const res = document.getElementById(`calc-result-${calcId}`);
+                    const res = document.getElementById(`calc-result-${uniqueCalcId}`);
                     if(res) res.value += i;
                 },
                 clr: function() { 
-                    const res = document.getElementById(`calc-result-${calcId}`);
+                    const res = document.getElementById(`calc-result-${uniqueCalcId}`);
                     if(res) res.value = ""; 
                 }
             };
@@ -4695,34 +4991,57 @@ if (document.querySelector(".winbox.settings")) return;
 <meta charset="UTF-8" />
 
 <style>
+/* ===== СКИДАННЯ ТА ФІКСАЦІЯ КОНТЕКСТУ ===== */
 
-body,html{
+
+body, html {
     margin: 0;
     padding: 0;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden; /* ГАРАНТОВАНО прибирає зовнішній скрол сторінки */
+}
+
+#sett_app {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    container-type: inline-size;
 }
 
 /* ===== GRID ЛЕЙАУТ ===== */
 main {
     margin: 0;
     padding: 0;
-    height: 100vh;
-
+    height: 100%; /* Займає рівно 100% від #sett_app, без виходу за межі */
+    width: 100%;
     display: grid;
     grid-template-columns: 240px 1fr;
+    grid-template-rows: 100%; /* Фіксуємо висоту рядка грида */
     grid-template-areas: "sidebar content";
+    overflow: hidden;
 }
 
 /* ===== SIDEBAR ===== */
 .settings-toolbar {
+    height: 100%; /* Замість 100vh */
     grid-area: sidebar;
     border-right: 1px solid #ccc;
     background: #f0f0f0;
     padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
     transition: 0.3s;
-    overflow: hidden;
+    overflow-y: auto; /* Якщо вкладок стане забагато, скролитиметься сам сайдбар */
+}
+
+/* ===== CONTENT ===== */
+.content-container {
+    grid-area: content;
+    height: 100%; /* Замість 100vh */
+    overflow-y: auto; /* Єдине місце, де дозволено вертикальний скрол контенту! */
+    padding: 15px;
 }
 
 /* Хендлер */
@@ -4744,47 +5063,37 @@ main {
     margin: 6px 0;
 }
 
-/* ===== CONTENT ===== */
-.content-container {
-    grid-area: content;
-    overflow-y: auto;
-    padding: 15px;
-}
-
-#sett_app {
-    container-type: inline-size;
-    padding:0;
-    margin:0;
-}
 
 
 
-/* ===== MOBILE ===== */
+
 @container (width < 700px) {
+    main.sidebar-collapsed {
+        grid-template-columns: 50px 1fr; /* Трохи збільшили для зручності іконки ≡ */
+    }
 
-     main.sidebar-collapsed {
-        grid-template-columns: 40px 1fr;
+    main.sidebar-collapsed .settings-toolbar {
+        padding: 5px;
+        align-items: center;
     }
 
     main.sidebar-collapsed .settings-toolbar .sidebar-tab,
     main.sidebar-collapsed .settings-toolbar .sidebar-separator {
-        display: none;
+        display: none !important; /* Гарантовано ховаємо текст */
     }
 
     .sidebar-handle {
-        display: block;
+        display: block !important;
         width: 100%;
+        padding: 8px 0;
         cursor: pointer;
         background: #ccc;
         border: 1px solid #aaa;
+        text-align: center;
     }
 }
 
-/* ===== ТВОЇ СТИЛІ (НЕ ЧІПАЛИСЬ) ===== */
-
-
-
-
+/* ===== СТИЛІ ===== */
 .setting-row {
     display: flex;
     align-items: center;
@@ -5132,14 +5441,22 @@ main {
     <!-- FILES -->
     <div class="page" data-page="files" hidden>
         <h2 data-i18n="files"></h2>
+
         <label for='showHidden' data-i18n="show_hidden"></label>
         <input id="showHidden" type="checkbox"> 
+
+<h2 data-i18n="file_associations"></h2>
+<div id='fileAssociations'>
+
+</div>
 
     </div>
 
     <!-- THEMES -->
     <div class="page" data-page="themes" hidden>
         <h2 data-i18n="themes"></h2>
+              <label for='hideWinContentOnTransform' data-i18n="hide_win_content_on_transform"></label>
+        <input id="hideWinContentOnTransform" type="checkbox"> 
         <div class="setting-row">
                 <span class="setting-label" data-i18n="theme"></span>
                 <select id="themeSelect"></select>
@@ -5164,22 +5481,7 @@ main {
 <input type="range" min="30" value="35" max="35" step="5" id="taskbarSize">
                 </div>
 
-      <!--
- <h3 data-i18n="taskbar_items"></h3>
-<div class="setting-row">
-       
-<select id="taskbarItems">
-
-</select>
-<div>
-<select id="addItems">
-
-</select>
-<button id="addItemL"><</button>
-<button id="addItemR">></button>
-</div>
-</div>
-       -->         
+    
     </div>
 
 </div>
@@ -5190,6 +5492,76 @@ main {
      `
      ,
 oncreate: function() {
+
+const fileAssociations = document.getElementById('fileAssociations');
+
+// Обходимо ключі об'єкта FILE_TYPES (txt, js, css...)
+Object.keys(FILE_TYPES).forEach(ext => {
+    // Пропускаємо Групу 6 (zip, iso...), де openWith === null, 
+    // бо для них користувач не може призначити програму за промовчанням
+
+    const el = document.createElement("div");
+    el.className = 'setting-row'; // Виправлено classList на className для звичайного рядка
+
+    // Відображаємо розширення файлу (наприклад, .js)
+    const label = document.createElement("span");
+    label.innerText = `.${ext}`;
+
+    const selectContainer = document.createElement("div");
+    
+    const selectLabel = document.createElement("span");
+    selectLabel.innerText = _('open_with') + ": ";
+
+    // Створюємо правильний тег <select> замість <input>
+    const select = document.createElement('select');
+    if (FILE_TYPES[ext].openWith === null ||  (ext == "pdf" && !navigator.pdfViewerEnabled )) {
+      label.style.color = 'gray';
+      selectLabel.color = 'gray';
+      select.disabled = true;
+    }
+
+    // Опція за замовчуванням (якщо програму не вибрано)
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'openf'; 
+    defaultOption.text = _('files'); // Або твій варіант 'Openf'
+    select.appendChild(defaultOption);  
+
+    // Наповнюємо випадаючий список додатками з реєстру
+    apps.forEach(app => {
+        // Перевіряємо, чи додаток взагалі вміє приймати файли
+        if (!app.openWithParam) return;
+
+        const newOption = document.createElement('option');
+        newOption.value = app.path; // Логічніше зберігати url додатку для виклику
+        newOption.text = app.name;  // Показуємо назву (наприклад, Monaco Editor)
+        
+        // Якщо цей додаток вже призначений для цього типу файлу — робимо його активним
+        if (FILE_TYPES[ext].openWith === app.path) {
+            newOption.selected = true;
+        }
+        
+        select.appendChild(newOption);  
+    });
+
+    // Обробник зміни налаштування користувачем
+    select.addEventListener('change', (e) => {
+        FILE_TYPES[ext].openWith = e.target.value;
+        FILE_ASSOC[ext] = e.target.value;
+        localStorage.setItem('config/exts', JSON.stringify(FILE_ASSOC));
+        console.log(`Асоціацію для .${ext} змінено на: ${e.target.value}`);
+        // Тут за потреби можна викликати збереження конфігу в IndexedDB системи
+    });
+
+    selectContainer.appendChild(selectLabel);
+    selectContainer.appendChild(select);
+    el.appendChild(label);
+    el.appendChild(selectContainer);
+    fileAssociations.appendChild(el);
+});
+
+
+
+
 
   const checkboxes = document.querySelectorAll('.format-group input[type="checkbox"]');
 
@@ -5249,41 +5621,45 @@ themeFiles.forEach(f => {
 
 thmSelect.onchange = async () => {
     const selectedName = thmSelect.value;
-    
+
     if (selectedName === "none") {
         localStorage.removeItem("theme");
-
+        theme = null;
+        loadTheme();
         const reboot = await confirm(_("confirm_set_theme"));
         if (reboot) safeShutdown({ restart: true });
         return;
     }
 
     const file = themeFiles.find(f => f.name === selectedName);
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = async function() {
-            try {
-                const text = reader.result;
-                const thm = parser.parse(text);
-                
-                if (thm && thm.styles) {
-                    localStorage.setItem("theme", file.name);
-                    parser.applyTheme(thm.styles);
-                    
-                    const wbtheme = thm.name || "user-theme";
-                    applyThemeToUI(wbtheme);
-                    
-                    const reboot = await confirm(_("confirm_set_theme"));
-                    if (reboot) safeShutdown({ restart: true });
-                }
-            } catch (err) {
-                console.error("Помилка при зміні теми:", err);
-            }
-        };
-        reader.readAsText(file);
+    if (!file) return;
+
+    try {
+        // Wrap FileReader in a Promise so we can await it
+        const text = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsText(file);
+        });
+
+        const thm = parser.parse(text);
+
+        if (thm && thm.styles) {
+            localStorage.setItem("theme", file.name);
+            parser.applyTheme(thm.styles);
+
+            const wbtheme = thm.name || "user-theme";
+            applyThemeToUI(wbtheme);
+
+            // Now this runs in the same async chain as the user gesture
+            const reboot = await confirm(_("confirm_set_theme"));
+            if (reboot) safeShutdown({ restart: true });
+        }
+    } catch (err) {
+        console.error("Помилка при зміні теми:"+ err);
     }
 };
-
 
     const toggleBtn = document.getElementById("sidebarToggle");
 const tabs = document.querySelectorAll(".sidebar-tab");
@@ -5491,6 +5867,14 @@ if (name == "usage") {
         };
     }
 }
+if (name == 'themes'){
+  hideWinContentOnTransformCheck = document.getElementById("hideWinContentOnTransform");
+  hideWinContentOnTransformCheck.checked = hideWinContentOnTransform;
+  hideWinContentOnTransformCheck.onchange = () => {
+    hideWinContentOnTransform = hideWinContentOnTransformCheck.checked;
+    localStorage.setItem('hideWinContentOnTransform', JSON.stringify(hideWinContentOnTransformCheck.checked))
+  }
+}
     if (name == "files"){
         showHiddenCheck = document.getElementById("showHidden");
 showHiddenCheck.checked = filesShowHidden;
@@ -5514,9 +5898,6 @@ availableDrivers.forEach(name => {
   li.innerText = name;
   container.appendChild(li);
 });
-
-
-
 
 
 const container1 = document.getElementById("dev_list");
@@ -5688,16 +6069,16 @@ if (!window.console._hooked) {
 }
 
 addIcon(("terminal"), icns.term, function(){
-  const termId = Date.now();
+  const uniqueTermId = Date.now();
 new wm(_('terminal'), {
         x: "center", y: "center",
         icon: icns.term,
         class: ['no-full', wbtheme, 'winbox-terminal', 'tra'],
         html: `
 <div class="output-container" style="width:100%; height:100%; background:rgba(0,0,0,0.5); color:#fff; display:flex; flex-direction:column; user-select:text !important;">
-  <div id="tout-${termId}" style="flex-grow:1; overflow-y:auto; padding:10px; white-space:pre-wrap; font-family:monospace !important;"></div>
+  <div id="tout-${uniqueTermId}" style="flex-grow:1; overflow-y:auto; padding:10px; white-space:pre-wrap; font-family:monospace !important;"></div>
   <input  
-    id="term-input-${termId}"
+    id="term-input-${uniqueTermId}"
     style="font-family:monospace !important; background:rgba(0,0,0,0.5); color:#fff; border:none; border-top:1px solid #999; padding:8px; width:100%; box-sizing:border-box; outline:none;" 
     type="text" 
     autofocus 
@@ -5705,8 +6086,8 @@ new wm(_('terminal'), {
 </div>
         `,
         oncreate: function () {
-            const out = document.getElementById(`tout-${termId}`);
-            const input = document.getElementById(`term-input-${termId}`);
+            const out = document.getElementById(`tout-${uniqueTermId}`);
+            const input = document.getElementById(`term-input-${uniqueTermId}`);
             
             let historyIndex = -1;
 
@@ -5813,10 +6194,10 @@ new wm(_('terminal'), {
                 }
             };
 
-            window.ActiveTerminals.instances[termId] = terminalConsole;
+            window.ActiveTerminals.instances[uniqueTermId] = terminalConsole;
 
             input.onfocus = () => {
-                window.ActiveTerminals.currentActiveId = termId;
+                window.ActiveTerminals.currentActiveId = uniqueTermId;
             };
 
             const executeCommand = async () => {
@@ -5832,7 +6213,7 @@ new wm(_('terminal'), {
                 out.appendChild(cmd);
 input.value = '';
 
-                window.ActiveTerminals.currentActiveId = termId;
+                window.ActiveTerminals.currentActiveId = uniqueTermId;
 
                 try {
 
@@ -5862,18 +6243,26 @@ input.value = '';
                             }));
                             res.textContent = "Can't display JS file objects directly. Displaying adapted:\nStorage: " + (typeof DB_NAME !== 'undefined' ? DB_NAME : 'N/A') + "\nLast Storage: " + (typeof LAST_DB !== 'undefined' ? LAST_DB : 'N/A') + "\n" + JSON.stringify(arrayMeta, null, 2);
                         } else if (typeof apps !== 'undefined' && r === apps) {
-                            const cleanedAppsForLog = apps.map(app => {
-                                if (app.icon && app.icon.startsWith("data:")) {
-                                    return { ...app, icon: "BASE64 image omitted" };
-                                }
-                                return app; 
-                            });
-                            res.textContent = JSON.stringify(cleanedAppsForLog, null, 2);
+                              const cleanedAppsForLog = apps.map(app => {
+                                  if (app.icon && app.icon.startsWith("data:")) {
+                                      return { ...app, icon: "BASE64 image omitted" };
+                                  }
+                                  return app; 
+                              });
+                              res.textContent = JSON.stringify(cleanedAppsForLog, null, 2);
                         } else {
-                            res.textContent = typeof r === 'object'
-                                ? JSON.stringify(r, null, 2)
-                                : (typeof r === 'string' && r.includes(' ') ? _(r) : String(r));
-                        }
+    if (typeof r === 'object' && r !== null) {
+        // Кастомний реплейсер преобразує функції у текстовий вигляд
+        res.textContent = JSON.stringify(r, (key, value) => {
+            if (typeof value === 'function') {
+                return `[Function: ${value.name || 'anonymous'}]`;
+            }
+            return value;
+        }, 2);
+    } else {
+        res.textContent = (typeof r === 'string' && r.includes(' ') ? _(r) : String(r));
+    }
+}
                         out.appendChild(res);
                     }
                 } catch(e) {
@@ -5913,8 +6302,8 @@ input.value = '';
         },
         onclose: function () {
 
-            delete window.ActiveTerminals.instances[termId];
-            if (window.ActiveTerminals.currentActiveId === termId) {
+            delete window.ActiveTerminals.instances[uniqueTermId];
+            if (window.ActiveTerminals.currentActiveId === uniqueTermId) {
                 window.ActiveTerminals.currentActiveId = null;
             }
         },
@@ -6071,7 +6460,7 @@ class EventEmitter {
 }
 
 async function gitClone(url, branch = "main") {
-
+if (url.includes('tree/')) url = url.split('tree/')[0];
   let downloadUrl = url.includes("zipball") ? url : `${url}/zipball/${branch}`;
   const repoName = url.split("/").pop();
 
@@ -6218,11 +6607,11 @@ async function deleteFile(fileName) {
 
             await idbWrapper.deleteFile(fileName); 
 
-            const foundApp = apps.find(app => app.url === fileName);
+            const foundApp = apps.find(app => app.path === fileName);
             if (foundApp){
 
 
-                apps = apps.filter(app => app.url !== fileName);
+                apps = apps.filter(app => app.path !== fileName);
             }
             
             return true;
@@ -6524,12 +6913,12 @@ document.body.addEventListener('keydown', async function(event) {
         }
     }
 
-    /*
+
     if (event.key === 'Meta') {
         event.preventDefault();
         openMenu();
     }
-    */
+
 
     if (event.altKey && event.key === 'F4') {
         event.preventDefault();
@@ -6552,7 +6941,7 @@ document.body.addEventListener('keydown', async function(event) {
 });
 
 
-
+// Uncomment when terminal can't be accessed.
 /*
 indexedDB.deleteDatabase(DB_NAME);
 localStorage.clear();

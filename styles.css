@@ -57,7 +57,7 @@
    ============================================= */
 
 body {
-  background-color: teal !important;
+  background-color: black;
   background-size: cover;
   background-repeat: no-repeat;
   overflow: hidden !important;
@@ -67,6 +67,12 @@ body {
   user-select: none;
   scroll-behavior: smooth;
 }
+
+body.win_cla{
+  background-color: teal;
+}
+
+
 
 
 
@@ -99,11 +105,19 @@ body {
   display: none;
 }
 
+.hidden {
+  opacity: 0;
+  visibility: hidden;
+  display: none;
+}
+
 .tra:not(.win_cla) .wb-body{
 background:transparent !important;
 color:white !important; 
 text-shadow: 1px 1px 1px #000;
 }
+
+
 
 /* =============================================
    PROGRESS BAR
@@ -273,6 +287,17 @@ iframe #document {
 }
 
 #notify {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0; 
+  
+  /* Магія клік-наскрізності для самого контейнера */
+  pointer-events: none; 
+  
+  display: flex;
   color: var(--color-text-secondary);
 }
 
@@ -339,15 +364,11 @@ body.taskbar-at-top .winbox.min {
 }
 
 
-.winbox.min .wb-control {
-  display: none;
-}
-
 
 /* =============================================
    WINBOX — GLASS THEME
    ============================================= */
-.glass-theme, .win_aero {
+.glass-theme:not(body), .win_aero:not(body) {
     text-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* Сучасна тінь */
     border: solid 1px #aaaaaa55;
@@ -356,27 +377,52 @@ body.taskbar-at-top .winbox.min {
     
 }
 
-.win_cla{
+.win_cla, .win_cla *{
 box-shadow: none;
 animation: none !important;
 transform: none !important;
+transition: none !important;
+opacity: 1 !important;
+}
+
+.winbox.is-cont-hidden{
+      background: transparent !important;
+  /* 10px solid border with 50% opacity */
+}
+
+.winbox.win_cla.is-cont-hidden{
+    border: 5px solid rgba(0, 0, 0, 0.5) !important; 
+}
+
+
+.winbox.is-cont-hidden .wb-header *, .winbox.is-cont-hidden .wb-body {
+    /* Makes the element non-interactive so it doesn't block clicks */
+  pointer-events: none; 
+  visibility: hidden !important;
+  opacity: 0;
+  transition: none; /* Disables the transition entirely */
+
 }
 
 .winbox{
-animation: grow 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 
+animation: grow 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity: 0;
+    transform: scale(0.85) translateY(20px);
+    animation: winOpen 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    will-change: transform, opacity; /* Оптимізація для відеокарти */
 border-radius: var(--radius-md); /* Заокруглення для сучасного вигляду */
 
 }
 
-.winbox:not(.audio) {
+.winbox:not(.play):not(.is-cont-hidden) {
   background: var(--color-win-ina) !important;
 
 }
 
 
 
-.winbox.focus
+.winbox.focus:not(.is-cont-hidden)
 {
   background: var(--color-win-act) !important;
 }
@@ -398,11 +444,14 @@ border-radius: var(--radius-md); /* Заокруглення для сучасн
 /* 3. Стилізація заголовка */
 .winbox .wb-title {
     color: #fff; /* Білий заголовок */
-    cursor: url("files.svg"),auto;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5); /* Для читабельності */
 }
 
-.winbox .wb-control > *{
+.winbox.wb-control{
+  cursor: default;
+}
+
+.winbox:not(.win_cla) .wb-control > *{
   transform: scale(0.95);
   border-radius: var(--radius-md);
   background-size: 0px; /* ЗНАЧОК ПРИХОВАНО: нульовий розмір фону */
@@ -412,8 +461,12 @@ border-radius: var(--radius-md); /* Заокруглення для сучасн
   transition: background-size 0.1s ease-in-out; /* Додаємо плавний перехід */
 }
 
+.winbox.win_cla .wb-control > * {
+    background-blend-mode: difference;
+}
+
 /* 2. ПОКАЗУЄМО ІКОНКУ ПРИ НАВЕДЕННІ НА КОЖНУ КНОПКУ */
-.winbox .wb-control > *:hover {
+.winbox:not(.win_cla) .wb-control > *:hover {
     background-size: 70%; /* ЗНАЧОК ПОКАЗАНО: встановлюємо видимий розмір */
 }
 .winbox .wb-max {
@@ -528,10 +581,13 @@ body.taskbar-at-top #sysmenu {
 }
 
 #sysmenu * {
-  background: none !important;
-  border: none !important; 
   color: var(--color-text-tretiary);
-    text-shadow: 1px 1px 1px #000 !important;
+}
+
+body:not(.win_cla) #sysmenu *{
+    background: none !important;
+  border: none !important; 
+  text-shadow: 1px 1px 1px #000 !important;
 }
 
 footer > img {
@@ -544,11 +600,11 @@ footer > img {
 }
 
 vr {
-  display: inline-block;
+  display: inline;
   width: 1px;
   height: 100%;
-  background: #00000033;
-  margin: 3px 0;
+  background: #00000050;
+  margin: 1px 0;
 }
 
 
@@ -608,25 +664,6 @@ body.taskbar-at-top .notification {
    WINBOX — ADVANCED ANIMATIONS (SPRING ENGINE)
    ============================================= */
 
-/* Базовий стан вікна перед появою (холодне завантаження) */
-.winbox {
-    opacity: 0;
-    transform: scale(0.85) translateY(20px);
-    animation: winOpen 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    will-change: transform, opacity; /* Оптимізація для відеокарти */
-}
-
-
-
-/* Клас, який ми будемо вішати через JS перед видаленням вікна */
-.winbox.wb-closing {
-    animation: winClose 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
-}
-
-/* Клас для красивого згортання на таскбар (Minimize) */
-.winbox.wb-hiding {
-    animation: winMinimize 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
-}
 
 /* --- Ключові кадри анімацій --- */
 
@@ -642,26 +679,3 @@ body.taskbar-at-top .notification {
     }
 }
 
-/* 2. Закриття: М'яке згасання та провалювання вниз */
-@keyframes winClose {
-    0% {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
-    100% {
-        opacity: 0;
-        transform: scale(0.92) translateY(20px);
-    }
-}
-
-/* 3. Згортання: Схлопування у бік таскбару */
-@keyframes winMinimize {
-    0% {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
-    100% {
-        opacity: 0;
-        transform: scale(0.5) translateY(100px);
-    }
-}

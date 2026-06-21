@@ -5,13 +5,165 @@ function escapeHtml(str) {
 }
 
 async function redefineAdaptations() {
+
+window.showOpenFilePicker = (opts = {}) => {
+    if (icons) {
+        const physicalIcon = Array.from(icons).find(icon => icon.name === 'files');
+        
+        if (physicalIcon && physicalIcon.onclick && apps.some(app => app.name === physicalIcon.name)) {         
+            
+            return new Promise((resolve, reject) => {
+                
+                const onFileSelected = (e) => {
+                    window.removeEventListener('file_picked', onFileSelected);
+                    window.removeEventListener('file_cancel', onFileCanceled);
+                    
+                    const handles = e.detail.paths.map(path => ({
+                        kind: 'file',
+                        name: path.split('/').pop(),
+                        getFile: async () => parent.getFs().find(f => f.name === path)
+                    }));
+                    resolve(handles);
+                };
+
+                const onFileCanceled = () => {
+                    window.removeEventListener('file_picked', onFileSelected);
+                    window.removeEventListener('file_cancel', onFileCanceled);
+                    reject(new DOMException("User aborted a request.", "AbortError"));
+                };
+
+                window.addEventListener('file_picked', onFileSelected);
+                window.addEventListener('file_cancel', onFileCanceled);
+
+                const safeOpts = opts && typeof opts === 'object' ? opts : {};
+
+                // Використовуємо СUSTOMEvent, щоб передати об'єкт без втрат!
+                const customClick = new CustomEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    detail: { extraData: { ...safeOpts, runAs: 'file' } }
+                });
+                
+                physicalIcon.element.dispatchEvent(customClick);
+            });
+        }
+    }
+};
+
+window.showDirectoryPicker = async (opts = {}) => {
+    // Ми вже в ядрі, тому шукаємо іконку прямо у поточному контексті
+    if (typeof icons !== 'undefined') {
+        const physicalIcon = Array.from(icons).find(icon => icon.name === 'files');
+        
+        if (physicalIcon && physicalIcon.onclick && apps.some(app => app.name === physicalIcon.name)) {         
+            
+            return new Promise((resolve, reject) => {
+                
+                const onDirSelected = (e) => {
+                    window.removeEventListener('dir_picked', onDirSelected);
+                    window.removeEventListener('dir_cancel', onDirCanceled);
+                    
+                    const chosenDirPath = e.detail.paths[0]; 
+                    const dirName = chosenDirPath.split('/').filter(Boolean).pop() || "root";
+                    
+                    resolve({
+    kind: 'directory',
+    name: dirName,
+
+    // 1. Метод entries() — повертає пари [name, handle]
+    entries: function() {
+        const iterable = {
+            // Цей символ робить об'єкт асинхронно ітерованим для for await...of
+            [Symbol.asyncIterator]: async function* () {
+                const fs = typeof getFs === 'function' ? getFs() : [];
+                const seenEntries = new Set();
+                
+                for (const file of fs) {
+                    if (file.name.startsWith(chosenDirPath + '/')) {
+                        const relativePath = file.name.substring(chosenDirPath.length + 1);
+                        const parts = relativePath.split('/');
+                        const firstSegment = parts[0];
+                        
+                        if (seenEntries.has(firstSegment)) continue;
+                        seenEntries.add(firstSegment);
+                        
+                        if (parts.length > 1) {
+                            // Повертаємо [ім'я, дескриптор папки]
+                            yield [firstSegment, { kind: 'directory', name: firstSegment }];
+                        } else {
+                            // Повертаємо [ім'я, дескриптор файла]
+                            yield [firstSegment, { kind: 'file', name: firstSegment, getFile: async () => file }];
+                        }
+                    }
+                }
+            }
+        };
+        return iterable;
+    },
+
+    // 2. Метод values() — повертає тільки дескриптори (без ключів)
+    values: function() {
+        const iterable = {
+            [Symbol.asyncIterator]: async function* () {
+                const fs = typeof getFs === 'function' ? getFs() : [];
+                const seenEntries = new Set();
+                
+                for (const file of fs) {
+                    if (file.name.startsWith(chosenDirPath + '/')) {
+                        const relativePath = file.name.substring(chosenDirPath.length + 1);
+                        const parts = relativePath.split('/');
+                        const firstSegment = parts[0];
+                        
+                        if (seenEntries.has(firstSegment)) continue;
+                        seenEntries.add(firstSegment);
+                        
+                        if (parts.length > 1) {
+                            yield { kind: 'directory', name: firstSegment };
+                        } else {
+                            yield { kind: 'file', name: firstSegment, getFile: async () => file };
+                        }
+                    }
+                }
+            }
+        };
+        return iterable;
+    },
+
+    // 3. Для прямого перебору дескриптора папки (дехто пише for await (const x of dirHandle))
+    [Symbol.asyncIterator]: function() {
+        return this.entries()[Symbol.asyncIterator]();
+    }
+});
+                };
+
+                const onDirCanceled = () => {
+                    window.removeEventListener('dir_picked', onDirSelected);
+                    window.removeEventListener('dir_cancel', onDirCanceled);
+                    reject(new DOMException("User aborted a request.", "AbortError"));
+                };
+
+                window.addEventListener('dir_picked', onDirSelected);
+                window.addEventListener('dir_cancel', onDirCanceled);
+
+                const safeOpts = opts && typeof opts === 'object' ? opts : {};
+
+                const customClick = new CustomEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    detail: { extraData: { ...safeOpts, runAs: 'dir' } }
+                });
+                
+                physicalIcon.element.dispatchEvent(customClick);
+            });
+        }
+    }
+};
+
+
   // Краще використовувати window.onerror для повного перехоплення системних помилок
 window.onerror = (message, source, lineno, colno, error) => {
     // 1. Спершу виводимо в консоль для дебагу (щоб бачити помилку, якщо WinBox впаде)
-    console.error("System Intercepted Error:", message, source);
-
-    
-    
+  
     // Формуємо HTML
     const htm = (lineno == null) 
         ? `<div><img width="70" src="${icns.dialogErr}"><br>${message}</div>` 
@@ -19,9 +171,9 @@ window.onerror = (message, source, lineno, colno, error) => {
 
     // 2. Створюємо вікно WinBox (переконуємося, що всі дужки закриті)
     try {
-        new wm(_("js_error_title"), {
+        new wm(_("js_error"), {
             x: "center", y: "center",
-            class: ["no-full", wbtheme || "glass", "no-max"],
+            class: ["no-full", wbtheme , "no-max"],
             icon: icns.dialogErr,
             height: 200,
             width: 230,
@@ -108,7 +260,7 @@ const pri = new wm( _("print_btn"), {x: "center",y: "center",class: wbtheme+" no
   return new Promise((resolve) => {
     const icon = icns.dialogInfo;
 
-    new wm(_("info"), {x: "center",y: "center",
+    new wm("window.alert", {x: "center",y: "center",
       class: ["no-header", wbtheme, "no-max", "no-resize"],
       icon: icon,
       height: 200,
@@ -132,7 +284,7 @@ const pri = new wm( _("print_btn"), {x: "center",y: "center",class: wbtheme+" no
 }
 window.confirm = async (msg) => {
   return new Promise((resolve) => {
-    new wm(_("confirm"), {
+    new wm("window.confirm", {
       x: "center", y: "center",
       class: ["no-header", wbtheme, "no-max", "no-resize"],
       height: 150, // Трохи зменшив висоту для компактності
@@ -164,7 +316,7 @@ window.confirm = async (msg) => {
 
 window.prompt = async (msg, defaultValue = "") => {
   return new Promise((resolve) => {
-    new wm(_("prompt"), {
+    new wm("window.prompt", {
       x: "center", y: "center",
       class: ["no-header", wbtheme, "no-max", "no-resize"],
       height: 160,
