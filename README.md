@@ -15,13 +15,7 @@ Modules are stored in system/node_modules/ (note that unlike UNIX-like file syst
 
 # Contrubution
 You can contribute by developing apps for Infinity OS and publishing them into Infinity Store.
-You can submit you app and view mini-docs at: 
 
-https://tally.so/r/MeYQ2l
-
-More info about project at:
-
-https://dev.to/max_f2ab6697eb4060d4bc660
 
 User wiki and Dev Docs:
 
